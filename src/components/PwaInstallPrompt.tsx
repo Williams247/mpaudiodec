@@ -30,18 +30,18 @@ export default function PwaInstallPrompt() {
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, [dismissed]);
 
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    try {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === "dismissed") {
-        setDismissed(true);
-      }
-    } finally {
-      setDeferredPrompt(null);
-    }
-  };
+  // const handleInstall = async () => {
+  //   if (!deferredPrompt) return;
+  //   try {
+  //     await deferredPrompt.prompt();
+  //     const choice = await deferredPrompt.userChoice;
+  //     if (choice.outcome === "dismissed") {
+  //       setDismissed(true);
+  //     }
+  //   } finally {
+  //     setDeferredPrompt(null);
+  //   }
+  // };
 
   if (!deferredPrompt || dismissed) return null;
 
