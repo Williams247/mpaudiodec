@@ -11,7 +11,7 @@ type BeforeInstallPromptEvent = Event & {
 export default function PwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed] = useState(false);
 
   useEffect(() => {
     const isStandalone =
