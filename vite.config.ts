@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import babel from '@rolldown/plugin-babel'
 import path from 'node:path'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -7,11 +8,12 @@ import { VitePWA } from 'vite-plugin-pwa'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    basicSsl(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     VitePWA({
       devOptions: {
-        enabled: true,
+        enabled: false,
       },
       registerType: 'autoUpdate',
       strategies: 'generateSW',
@@ -50,6 +52,17 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@shared': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    https: {},
+    proxy: {
+      '/backend': {
+        target: 'https://audiodec-api.onrender.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (requestPath) => requestPath.replace(/^\/backend/, ''),
+      },
     },
   },
 })

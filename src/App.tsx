@@ -10,6 +10,9 @@ import { PlayerProvider } from "./context/PlayerContext";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import CategoryManager from "./pages/CategoryManager";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MusicPlayer from "./components/MusicPlayer";
 import AudioElement from "./components/AudioElement";
@@ -25,6 +28,8 @@ function AppRoutes() {
     <>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/"
           element={
@@ -32,6 +37,14 @@ function AppRoutes() {
               {isAuthenticated && <AudioElement />}
               <Home />
               {isAuthenticated && <MusicPlayer />}
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/categories"
+          element={
+            <ProtectedRoute>
+              <CategoryManager />
             </ProtectedRoute>
           }
         />

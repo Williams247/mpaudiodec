@@ -2,11 +2,25 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Music } from "lucide-react";
+import { Eye, EyeOff, Music } from "lucide-react";
+import { z } from "zod";
+
+const loginSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address"),
+  password: z
+    .string()
+    .min(6, "Password must be at least 6 characters")
+    .max(128, "Password is too long"),
+});
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -14,14 +28,24 @@ export default function Login() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      const nextErrors = parsed.error.flatten().fieldErrors;
+      setFieldErrors({
+        email: nextErrors.email?.[0],
+        password: nextErrors.password?.[0],
+      });
+      setError("");
+      return;
+    }
+
+    setFieldErrors({});
     setError("");
     setLoading(true);
 
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    if (!login(email, password)) {
-      setError("Please enter a valid email and password (min 6 characters)");
+    const result = await login(email, password);
+    if (!result.success) {
+      setError(result.message || "Unable to login");
       setLoading(false);
       return;
     }
@@ -59,6 +83,9 @@ export default function Login() {
                 placeholder="you@example.com"
                 className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition"
               />
+              {fieldErrors.email && (
+                <p className="mt-1 text-xs text-red-400">{fieldErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -68,15 +95,35 @@ export default function Login() {
               >
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition"
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 pr-11 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 px-3 text-zinc-300 hover:text-white"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {fieldErrors.password && (
+                <p className="mt-1 text-xs text-red-400">{fieldErrors.password}</p>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => navigate("/forgot-password")}
+              className="text-sm text-zinc-300 hover:text-white transition text-left"
+            >
+              Forgot password?
+            </button>
 
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">

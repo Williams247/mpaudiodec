@@ -1,11 +1,21 @@
 import { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
+import {
+  clearAuthToken,
+  getAuthToken,
+  loginUser,
+  logoutUser,
+  setAuthToken,
+} from '@/lib/api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  user: { email: string } | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
+  user: { email: string; name?: string } | null;
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; message?: string }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -15,7 +25,8 @@ function getInitialAuthState() {
   try {
     const storedAuth = localStorage.getItem('isAuthenticated');
     const storedUser = localStorage.getItem('user');
-    if (storedAuth === 'true' && storedUser) {
+    const storedToken = getAuthToken();
+    if (storedAuth === 'true' && storedUser && storedToken) {
       return {
         isAuthenticated: true,
         user: JSON.parse(storedUser),
@@ -37,27 +48,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [user, setUser] = useState(getInitialAuthState().user);
 
-  const login = (email: string, password: string): boolean => {
-    // Basic email validation
+  const login = async (
+    email: string,
+    password: string,
+  ): Promise<{ success: boolean; message?: string }> => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return false;
+      return { success: false, message: 'Please enter a valid email address' };
     }
-    // Password minimum length
     if (password.length < 6) {
-      return false;
+      return { success: false, message: 'Password must be at least 6 characters' };
     }
-    
-    setUser({ email });
-    setIsAuthenticated(true);
-    localStorage.setItem('user', JSON.stringify({ email }));
-    localStorage.setItem('isAuthenticated', 'true');
-    return true;
+
+    try {
+      const result = await loginUser(email, password);
+      if (!result.token) {
+        return {
+          success: false,
+          message: 'Login succeeded but no access token was returned by the backend.',
+        };
+      }
+
+      const userInfo = {
+        email: result.user?.email || email,
+        name: result.user?.name,
+      };
+      setUser(userInfo);
+      setIsAuthenticated(true);
+      setAuthToken(result.token);
+      localStorage.setItem('user', JSON.stringify(userInfo));
+      localStorage.setItem('isAuthenticated', 'true');
+      return { success: true, message: result.message };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to login. Please try again.';
+      return { success: false, message };
+    }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await logoutUser();
+    } catch {
+      // If logout endpoint fails, still clear local state.
+    }
     setUser(null);
     setIsAuthenticated(false);
+    clearAuthToken();
     localStorage.removeItem('user');
     localStorage.removeItem('isAuthenticated');
   };

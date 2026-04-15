@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useRef } from 'react';
 import type { ReactNode, RefObject } from 'react';
-import type { Song } from '@/data/mockSongs';
+import type { Song } from '@/types/music';
 
 type LoopMode = 'none' | '1x' | '2x' | '3x' | '4x' | '5x' | '6x' | 'forever';
 

@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { usePlayer } from '@/context/PlayerContext';
-import { categories, songs } from '@/data/mockSongs';
-import type { Song } from '@/data/mockSongs';
+import { fetchMusic, fetchMusicCategories } from '@/lib/api';
+import type { Song, Category } from '@/types/music';
 import { LogOut, Music, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function Home() {
@@ -11,12 +11,16 @@ export default function Home() {
   const { play } = usePlayer();
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -47,6 +51,26 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkScroll);
   }, []);
 
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const [musicList, categoryList] = await Promise.all([
+          fetchMusic(),
+          fetchMusicCategories(),
+        ]);
+        setSongs(musicList);
+        setCategories(categoryList);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch music data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    void loadData();
+  }, []);
+
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
       const scrollAmount = 200;
@@ -71,7 +95,13 @@ export default function Home() {
             <h2 className="text-md font-bold text-white pt-2">AudioDec</h2>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-zinc-400 hidden sm:inline">{user?.email}</span>
+            <span className="text-sm text-zinc-400 hidden md:inline">{user?.email}</span>
+            <button
+              onClick={() => navigate('/categories')}
+              className="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition"
+            >
+              Categories
+            </button>
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition"
@@ -145,6 +175,13 @@ export default function Home() {
       </div>
 
       <main>
+        {loading && (
+          <div className="px-6 py-4 text-zinc-300">Loading music...</div>
+        )}
+        {error && !loading && (
+          <div className="px-6 py-4 text-red-400">{error}</div>
+        )}
+
         {/* Desktop Grid View */}
         <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 py-3">
           {filteredSongs.map((song) => (

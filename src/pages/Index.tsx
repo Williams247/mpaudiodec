@@ -4,9 +4,6 @@ import { useEffect, useState } from "react";
 export default function Index() {
   const [exampleFromServer, setExampleFromServer] = useState("");
   // Fetch users on component mount
-  useEffect(() => {
-    fetchDemo();
-  }, []);
 
   // Example of how to fetch data from the server (if needed)
   const fetchDemo = async () => {
@@ -18,6 +15,10 @@ export default function Index() {
       console.error("Error fetching hello:", error);
     }
   };
+
+  useEffect(() => {
+    fetchDemo();
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
