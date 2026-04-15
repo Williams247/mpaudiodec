@@ -16,7 +16,6 @@ export default function AudioElement() {
   return (
     <audio
       ref={audioRef}
-      crossOrigin="anonymous"
       style={{ display: 'none' }}
     />
   );

@@ -20,8 +20,14 @@ export interface ApiMusic {
   id: string;
   title: string;
   filename?: string;
-  music_url: string;
-  thumbnail_url: string;
+  music_url?: string;
+  signed_music_url?: string;
+  signedMusicUrl?: string;
+  url?: string;
+  audio_url?: string;
+  file_url?: string;
+  thumbnail_url?: string;
+  thumbnail?: string;
   duration: string;
   description?: string;
   category: string;

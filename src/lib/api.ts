@@ -81,16 +81,32 @@ function categoryToIcon(name: string): string {
   return "🎵";
 }
 
+function normalizeMediaUrl(rawUrl?: string): string {
+  if (!rawUrl) return "";
+  const cleaned = rawUrl.trim().replace(/&amp;/g, "&");
+  if (cleaned.startsWith("//")) return `https:${cleaned}`;
+  return cleaned;
+}
+
 function normalizeMusic(music: ApiMusic): Song {
+  const playableUrl = normalizeMediaUrl(
+    music.signed_music_url ||
+      music.signedMusicUrl ||
+      music.music_url ||
+      music.audio_url ||
+      music.file_url ||
+      music.url,
+  );
+
   return {
     id: music.id,
     title: music.title,
     artist: music.filename || "Unknown Artist",
     duration: parseDurationToSeconds(music.duration),
-    thumbnail: music.thumbnail_url,
+    thumbnail: normalizeMediaUrl(music.thumbnail_url || music.thumbnail),
     description: music.description ?? "",
     categoryId: music.category,
-    url: music.music_url,
+    url: playableUrl,
   };
 }
 
