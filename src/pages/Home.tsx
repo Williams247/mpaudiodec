@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { usePlayer } from '@/context/PlayerContext';
+import CoverArt from '@/components/CoverArt';
 import { fetchMusic, fetchMusicCategories } from '@/lib/api';
 import type { Song, Category } from '@/types/music';
 import {
   LogOut,
-  Music,
   ChevronLeft,
   ChevronRight,
   Play,
@@ -337,17 +337,12 @@ export default function Home() {
                       </span>
                       <span className="flex items-center gap-3 min-w-0">
                         <span className="w-10 h-10 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0">
-                          {song.thumbnail ? (
-                            <img
-                              src={song.thumbnail}
-                              alt={song.title}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="w-full h-full flex items-center justify-center">
-                              <Music className="w-4 h-4 text-zinc-500" />
-                            </span>
-                          )}
+                        <CoverArt
+                          src={song.thumbnail}
+                          alt={song.title}
+                          className="w-full h-full object-cover"
+                          iconClassName="w-4 h-4 text-zinc-500"
+                        />
                         </span>
                         <span className="min-w-0">
                           <span className={`block truncate text-sm font-medium ${isActiveSong ? 'text-green-400' : 'text-white'}`}>
@@ -372,17 +367,12 @@ export default function Home() {
             {previewSong ? (
               <div className="mt-4">
                 <div className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800/80">
-                  {previewSong.thumbnail ? (
-                    <img
-                      src={previewSong.thumbnail}
-                      alt={previewSong.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Music className="w-10 h-10 text-zinc-500" />
-                    </div>
-                  )}
+                  <CoverArt
+                    src={previewSong.thumbnail}
+                    alt={previewSong.title}
+                    className="w-full h-full object-cover"
+                    iconClassName="w-10 h-10 text-zinc-500"
+                  />
                 </div>
                 <h3 className="mt-4 text-2xl lg:text-3xl font-bold text-white leading-tight break-words">
                   {previewSong.title}
@@ -420,17 +410,12 @@ export default function Home() {
               className="flex items-center gap-3 p-3 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg cursor-pointer transition"
             >
               <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-700">
-                {song.thumbnail ? (
-                  <img
-                    src={song.thumbnail}
-                    alt={song.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Music className="w-5 h-5 text-zinc-400" />
-                  </div>
-                )}
+                <CoverArt
+                  src={song.thumbnail}
+                  alt={song.title}
+                  className="w-full h-full object-cover"
+                  iconClassName="w-5 h-5 text-zinc-400"
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-white truncate text-sm">

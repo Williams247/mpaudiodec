@@ -1,7 +1,7 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-const API_BASE_URL = configuredApiBaseUrl ?? "";
+const API_BASE_URL = configuredApiBaseUrl?.replace(/\/+$/, "") ?? "";
 
 const AUTH_TOKEN_KEY = "authToken";
 
@@ -38,6 +38,7 @@ async function request<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: "include",
     headers,
   });
 
@@ -63,6 +64,24 @@ async function request<T>(
   }
 
   return payload as T;
+}
+
+async function ensureSanctumCsrfCookie() {
+  if (!API_BASE_URL) {
+    throw new Error("VITE_API_BASE_URL is not configured");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/sanctum/csrf-cookie`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to initialize CSRF cookie (${response.status})`);
+  }
 }
 
 function parseDurationToSeconds(duration: string): number {
@@ -199,6 +218,8 @@ export async function loginUser(email: string, password: string) {
         }).toString(),
       }),
   ];
+
+  await ensureSanctumCsrfCookie();
 
   for (const attempt of attempts) {
     try {

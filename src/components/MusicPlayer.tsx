@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { usePlayer } from '@/context/PlayerContext';
+import CoverArt from '@/components/CoverArt';
 import LoopModal from './LoopModal';
 import {
   Play,
@@ -8,7 +9,6 @@ import {
   SkipForward,
   Volume2,
   Repeat,
-  Music,
 } from 'lucide-react';
 
 export default function MusicPlayer() {
@@ -66,17 +66,12 @@ export default function MusicPlayer() {
             {/* Song Info - Mobile */}
             <div className="flex items-center gap-2 mb-3">
               <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-700">
-                {currentSong.thumbnail ? (
-                  <img
-                    src={currentSong.thumbnail}
-                    alt={currentSong.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Music className="w-4 h-4 text-zinc-400" />
-                  </div>
-                )}
+                <CoverArt
+                  src={currentSong.thumbnail}
+                  alt={currentSong.title}
+                  className="w-full h-full object-cover"
+                  iconClassName="w-4 h-4 text-zinc-400"
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-white truncate">
@@ -180,17 +175,12 @@ export default function MusicPlayer() {
             {/* Song Info - Left Section */}
             <div className="flex items-center gap-2 md:gap-3 flex-shrink-0 min-w-0 w-32 md:w-56">
               <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-700">
-                {currentSong.thumbnail ? (
-                  <img
-                    src={currentSong.thumbnail}
-                    alt={currentSong.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Music className="w-4 h-4 md:w-5 md:h-5 text-zinc-400" />
-                  </div>
-                )}
+                <CoverArt
+                  src={currentSong.thumbnail}
+                  alt={currentSong.title}
+                  className="w-full h-full object-cover"
+                  iconClassName="w-4 h-4 md:w-5 md:h-5 text-zinc-400"
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs md:text-sm font-semibold text-white truncate">
