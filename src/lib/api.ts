@@ -38,7 +38,6 @@ async function request<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    credentials: "include",
     headers,
   });
 
@@ -64,24 +63,6 @@ async function request<T>(
   }
 
   return payload as T;
-}
-
-async function ensureSanctumCsrfCookie() {
-  if (!API_BASE_URL) {
-    throw new Error("VITE_API_BASE_URL is not configured");
-  }
-
-  const response = await fetch(`${API_BASE_URL}/sanctum/csrf-cookie`, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to initialize CSRF cookie (${response.status})`);
-  }
 }
 
 function parseDurationToSeconds(duration: string): number {
@@ -219,8 +200,6 @@ export async function loginUser(email: string, password: string) {
       }),
   ];
 
-  await ensureSanctumCsrfCookie();
-
   for (const attempt of attempts) {
     try {
       payload = await attempt();
@@ -254,6 +233,14 @@ export async function loginUser(email: string, password: string) {
     user: payload?.data?.user || payload?.user || { email: normalizedEmail },
     message: payload?.message || "Login successful",
   };
+}
+
+export async function fetchCurrentUser() {
+  return request<{ email?: string; name?: string } | { data?: { email?: string; name?: string } }>(
+    "/api/user",
+    {},
+    true,
+  );
 }
 
 export async function forgotPassword(email: string) {

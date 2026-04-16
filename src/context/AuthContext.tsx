@@ -1,7 +1,8 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   clearAuthToken,
+  fetchCurrentUser,
   getAuthToken,
   loginUser,
   logoutUser,
@@ -47,6 +48,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getInitialAuthState().isAuthenticated
   );
   const [user, setUser] = useState(getInitialAuthState().user);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    const restoreSession = async () => {
+      try {
+        const payload = await fetchCurrentUser();
+        const userInfo = (
+          "data" in payload && payload.data
+            ? payload.data
+            : payload
+        ) as { email?: string; name?: string } | null;
+
+        if (!userInfo?.email) {
+          throw new Error("Unable to restore authenticated user");
+        }
+
+        setUser({
+          email: userInfo.email,
+          name: userInfo.name,
+        });
+        setIsAuthenticated(true);
+        localStorage.setItem("user", JSON.stringify({
+          email: userInfo.email,
+          name: userInfo.name,
+        }));
+        localStorage.setItem("isAuthenticated", "true");
+      } catch {
+        clearAuthToken();
+        localStorage.removeItem("user");
+        localStorage.removeItem("isAuthenticated");
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    };
+
+    void restoreSession();
+  }, []);
 
   const login = async (
     email: string,
