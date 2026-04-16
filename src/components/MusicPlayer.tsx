@@ -15,6 +15,7 @@ export default function MusicPlayer() {
   const {
     currentSong,
     isPlaying,
+    isLoadingSong,
     duration,
     currentTime,
     loopMode,
@@ -126,7 +127,9 @@ export default function MusicPlayer() {
                 onClick={isPlaying ? pause : resume}
                 className="p-2.5 bg-green-500 hover:bg-green-600 text-black rounded-full transition"
               >
-                {isPlaying ? (
+                {isLoadingSong ? (
+                  <div className="w-6 h-6 rounded-full border-2 border-black/30 border-t-black animate-spin" />
+                ) : isPlaying ? (
                   <Pause className="w-6 h-6" />
                 ) : (
                   <Play className="w-6 h-6 ml-0.5" />
@@ -217,7 +220,9 @@ export default function MusicPlayer() {
                 onClick={isPlaying ? pause : resume}
                 className="p-2 md:p-2.5 bg-green-500 hover:bg-green-600 text-black rounded-full transition"
               >
-                {isPlaying ? (
+                {isLoadingSong ? (
+                  <div className="w-6 h-6 rounded-full border-2 border-black/30 border-t-black animate-spin" />
+                ) : isPlaying ? (
                   <Pause className="w-5 h-5 md:w-6 md:h-6" />
                 ) : (
                   <Play className="w-5 h-5 md:w-6 md:h-6 ml-0.5" />

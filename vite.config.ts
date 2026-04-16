@@ -3,6 +3,8 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import babel from '@rolldown/plugin-babel'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { VitePWA } from 'vite-plugin-pwa'
 
 type B2AuthResponse = {
@@ -80,71 +82,277 @@ async function getSignedBackblazeUrl(args: {
   return `${auth.downloadUrl}/file/${args.bucketName}/${encodedPath}?Authorization=${encodeURIComponent(payload.authorizationToken)}`
 }
 
-function b2SignerPlugin(env: Record<string, string>) {
-  return {
-    name: 'b2-private-signing-endpoint',
-    configureServer(server: { middlewares: { use: (path: string, handler: (req: any, res: any) => void) => void } }) {
-      server.middlewares.use('/b2/sign-download', async (req, res) => {
-        if (req.method !== 'POST') {
-          res.statusCode = 405
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ message: 'Method not allowed' }))
-          return
-        }
+type ConnectMiddlewares = {
+  use: (path: string, handler: (req: any, res: any) => void | Promise<void>) => void
+}
 
-        const keyId = env.B2_KEY_ID
-        const applicationKey = env.B2_APPLICATION_KEY
-        const bucketId = env.B2_BUCKET_ID
-        const bucketName = env.B2_BUCKET_NAME
-        const ttlSeconds = Number(env.B2_SIGNED_URL_TTL_SECONDS || '3600')
+type DevAudioSession = { url: string; exp: number }
 
-        if (!keyId || !applicationKey || !bucketId || !bucketName) {
-          res.statusCode = 500
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ message: 'Missing Backblaze server env values' }))
-          return
-        }
+const devAudioProxySessions = new Map<string, DevAudioSession>()
+const DEV_AUDIO_SESSION_TTL_MS = 20 * 60 * 1000
 
+function pruneDevAudioProxySessions() {
+  const now = Date.now()
+  for (const [id, entry] of devAudioProxySessions) {
+    if (entry.exp < now) devAudioProxySessions.delete(id)
+  }
+}
+
+function assertAllowedBackblazeTarget(targetUrl: string): URL | null {
+  let remote: URL
+  try {
+    remote = new URL(targetUrl)
+  } catch {
+    return null
+  }
+  if (remote.protocol !== 'https:' && remote.protocol !== 'http:') {
+    return null
+  }
+  const host = remote.hostname.toLowerCase()
+  if (!host.includes('backblazeb2.com') && !host.includes('backblaze')) {
+    return null
+  }
+  return remote
+}
+
+async function pipeRemoteAudioToResponse(
+  req: { method?: string; headers: { range?: string | string[] } },
+  res: any,
+  targetUrl: string,
+) {
+  const forwardHeaders: Record<string, string> = {}
+  const range = req.headers.range
+  if (typeof range === 'string') {
+    forwardHeaders.Range = range
+  }
+
+  const upstream = await fetch(targetUrl, {
+    method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+    headers: forwardHeaders,
+    redirect: 'follow',
+  })
+
+  if (!upstream.ok) {
+    const snippet = await upstream.text()
+    res.statusCode = upstream.status
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.end(
+      `Backblaze fetch failed (${upstream.status}). ${snippet.slice(0, 500)}${snippet.length > 500 ? '…' : ''}`,
+    )
+    return
+  }
+
+  res.statusCode = upstream.status
+  const passthrough = [
+    'content-type',
+    'content-length',
+    'accept-ranges',
+    'content-range',
+    'etag',
+    'last-modified',
+  ] as const
+  for (const name of passthrough) {
+    const v = upstream.headers.get(name)
+    if (v) res.setHeader(name, v)
+  }
+
+  if (req.method === 'HEAD' || upstream.status === 204) {
+    res.end()
+    return
+  }
+
+  if (!upstream.body) {
+    res.end()
+    return
+  }
+
+  const nodeStream = Readable.fromWeb(upstream.body as import('stream/web').ReadableStream)
+  nodeStream.on('error', () => {
+    if (!res.writableEnded) {
+      res.destroy()
+    }
+  })
+  res.on('close', () => {
+    nodeStream.destroy()
+  })
+  nodeStream.pipe(res)
+}
+
+/**
+ * Presigned B2/S3 URLs must not be nested in another query string (double-encoding breaks signatures).
+ * Register the full URL via POST, then stream with a short same-origin path.
+ */
+function installDevAudioProxyMiddleware(middlewares: ConnectMiddlewares) {
+  // `enforce: 'pre'` + first plugin: run before Vite's HTML/SPA fallback so GET /dev-audio-proxy/s/:id
+  // is not answered with index.html (which breaks <audio>).
+  const handler = async (req: any, res: any) => {
+    // Under `use('/dev-audio-proxy', …)`, Connect strips that prefix from `req.url`.
+    const pathOnly = (req.url ?? '/').split('?')[0]
+    let pathname = pathOnly.replace(/\/$/, '') || '/'
+    if (!pathname.startsWith('/dev-audio-proxy')) {
+      pathname = `/dev-audio-proxy${pathname}`
+    }
+
+    if (pathname === '/dev-audio-proxy/session') {
+      if (req.method === 'POST') {
         try {
           const bodyChunks: Uint8Array[] = []
-          for await (const chunk of req) bodyChunks.push(chunk)
+          for await (const chunk of req) bodyChunks.push(chunk as Uint8Array)
           const raw = Buffer.concat(bodyChunks).toString('utf8')
-          const parsed = raw ? (JSON.parse(raw) as { sourceUrl?: string; fileName?: string }) : {}
-
-          const derivedFileName =
-            parsed.fileName ||
-            (parsed.sourceUrl ? getFileNameFromSourceUrl(parsed.sourceUrl, bucketName) : null)
-
-          if (!derivedFileName) {
+          const parsed = raw ? (JSON.parse(raw) as { url?: string }) : {}
+          const targetUrl = parsed.url?.trim()
+          if (!targetUrl) {
             res.statusCode = 400
             res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ message: 'Invalid source URL or file name' }))
+            res.end(JSON.stringify({ message: 'Missing url' }))
             return
           }
-
-          const url = await getSignedBackblazeUrl({
-            keyId,
-            applicationKey,
-            bucketId,
-            bucketName,
-            fileName: derivedFileName,
-            ttlSeconds,
-          })
-
+          if (!assertAllowedBackblazeTarget(targetUrl)) {
+            res.statusCode = 403
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ message: 'Host not allowed' }))
+            return
+          }
+          pruneDevAudioProxySessions()
+          const id = randomUUID()
+          devAudioProxySessions.set(id, { url: targetUrl, exp: Date.now() + DEV_AUDIO_SESSION_TTL_MS })
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ url, fileName: derivedFileName, expiresIn: ttlSeconds }))
+          res.end(JSON.stringify({ id }))
         } catch (error) {
-          b2AuthCache = null
           res.statusCode = 500
           res.setHeader('Content-Type', 'application/json')
           res.end(
             JSON.stringify({
-              message: error instanceof Error ? error.message : 'Unable to sign Backblaze URL',
+              message: error instanceof Error ? error.message : 'Session error',
             }),
           )
         }
+        return
+      }
+      res.statusCode = 405
+      res.end()
+      return
+    }
+
+    const streamMatch = pathname.match(/^\/dev-audio-proxy\/s\/([^/]+)\/?$/)
+    if (streamMatch && (req.method === 'GET' || req.method === 'HEAD')) {
+      pruneDevAudioProxySessions()
+      const id = streamMatch[1]
+      const session = devAudioProxySessions.get(id)
+      if (!session) {
+        res.statusCode = 404
+        res.setHeader('Content-Type', 'text/plain')
+        res.end('Unknown or expired session')
+        return
+      }
+
+      try {
+        await pipeRemoteAudioToResponse(req, res, session.url)
+      } catch (err) {
+        if (!res.headersSent) {
+          res.statusCode = 502
+          res.setHeader('Content-Type', 'text/plain')
+          res.end(err instanceof Error ? err.message : 'Proxy fetch failed')
+        }
+      }
+      return
+    }
+
+    res.statusCode = 404
+    res.setHeader('Content-Type', 'text/plain')
+    res.end('Not found')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- connect typings omit `next`; mount is correct at runtime
+  ;(middlewares as any).use('/dev-audio-proxy', handler)
+}
+
+function devAudioProxyPlugin() {
+  return {
+    name: 'dev-audio-proxy',
+    enforce: 'pre' as const,
+    configureServer(server: { middlewares: ConnectMiddlewares }) {
+      installDevAudioProxyMiddleware(server.middlewares)
+    },
+    configurePreviewServer(server: { middlewares: ConnectMiddlewares }) {
+      installDevAudioProxyMiddleware(server.middlewares)
+    },
+  }
+}
+
+function installB2SignDownloadMiddleware(middlewares: ConnectMiddlewares, env: Record<string, string>) {
+  middlewares.use('/b2/sign-download', async (req, res) => {
+    if (req.method !== 'POST') {
+      res.statusCode = 405
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ message: 'Method not allowed' }))
+      return
+    }
+
+    const keyId = env.B2_KEY_ID
+    const applicationKey = env.B2_APPLICATION_KEY
+    const bucketId = env.B2_BUCKET_ID
+    const bucketName = env.B2_BUCKET_NAME
+    const ttlSeconds = Number(env.B2_SIGNED_URL_TTL_SECONDS || '3600')
+
+    if (!keyId || !applicationKey || !bucketId || !bucketName) {
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ message: 'Missing Backblaze server env values' }))
+      return
+    }
+
+    try {
+      const bodyChunks: Uint8Array[] = []
+      for await (const chunk of req) bodyChunks.push(chunk)
+      const raw = Buffer.concat(bodyChunks).toString('utf8')
+      const parsed = raw ? (JSON.parse(raw) as { sourceUrl?: string; fileName?: string }) : {}
+
+      const derivedFileName =
+        parsed.fileName ||
+        (parsed.sourceUrl ? getFileNameFromSourceUrl(parsed.sourceUrl, bucketName) : null)
+
+      if (!derivedFileName) {
+        res.statusCode = 400
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ message: 'Invalid source URL or file name' }))
+        return
+      }
+
+      const url = await getSignedBackblazeUrl({
+        keyId,
+        applicationKey,
+        bucketId,
+        bucketName,
+        fileName: derivedFileName,
+        ttlSeconds,
       })
+
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ url, fileName: derivedFileName, expiresIn: ttlSeconds }))
+    } catch (error) {
+      b2AuthCache = null
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(
+        JSON.stringify({
+          message: error instanceof Error ? error.message : 'Unable to sign Backblaze URL',
+        }),
+      )
+    }
+  })
+}
+
+function b2SignerPlugin(env: Record<string, string>) {
+  return {
+    name: 'b2-private-signing-endpoint',
+    configureServer(server: { middlewares: ConnectMiddlewares }) {
+      installB2SignDownloadMiddleware(server.middlewares, env)
+    },
+    configurePreviewServer(server: { middlewares: ConnectMiddlewares }) {
+      installB2SignDownloadMiddleware(server.middlewares, env)
     },
   }
 }
@@ -152,10 +360,13 @@ function b2SignerPlugin(env: Record<string, string>) {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  /** Set `VITE_DEV_HTTPS=false` in `.env` to use http://localhost (no self-signed cert warning). Localhost is still a secure context for most APIs. */
+  const useDevHttps = env.VITE_DEV_HTTPS !== 'false' && env.VITE_DEV_HTTPS !== '0'
 
   return {
     plugins: [
-      basicSsl(),
+      devAudioProxyPlugin(),
+      ...(useDevHttps ? [basicSsl()] : []),
       b2SignerPlugin(env),
       react(),
       babel({ presets: [reactCompilerPreset()] }),
@@ -203,7 +414,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      https: {},
+      https: useDevHttps ? {} : false,
       proxy: {
         '/backend': {
           target: 'https://audiodec-api.onrender.com',

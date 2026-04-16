@@ -88,15 +88,29 @@ function normalizeMediaUrl(rawUrl?: string): string {
   return cleaned;
 }
 
+function pickAudioFileUrl(music: ApiMusic): string {
+  const candidates: Array<string | undefined> = [
+    music.signed_music_url,
+    music.signedMusicUrl,
+    music.music_url,
+    music.musicUrl,
+    music.audio_url,
+    music.audioUrl,
+    music.file_url,
+    music.fileUrl,
+    music.url,
+    music.src,
+    music.link,
+  ];
+  for (const raw of candidates) {
+    const normalized = normalizeMediaUrl(raw);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 function normalizeMusic(music: ApiMusic): Song {
-  const playableUrl = normalizeMediaUrl(
-    music.signed_music_url ||
-      music.signedMusicUrl ||
-      music.music_url ||
-      music.audio_url ||
-      music.file_url ||
-      music.url,
-  );
+  const playableUrl = pickAudioFileUrl(music);
 
   return {
     id: music.id,

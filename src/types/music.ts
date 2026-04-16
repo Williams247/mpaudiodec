@@ -21,11 +21,16 @@ export interface ApiMusic {
   title: string;
   filename?: string;
   music_url?: string;
+  musicUrl?: string;
   signed_music_url?: string;
   signedMusicUrl?: string;
   url?: string;
+  src?: string;
+  link?: string;
   audio_url?: string;
+  audioUrl?: string;
   file_url?: string;
+  fileUrl?: string;
   thumbnail_url?: string;
   thumbnail?: string;
   duration: string;

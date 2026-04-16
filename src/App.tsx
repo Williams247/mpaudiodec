@@ -15,7 +15,6 @@ import ResetPassword from "./pages/ResetPassword";
 import CategoryManager from "./pages/CategoryManager";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MusicPlayer from "./components/MusicPlayer";
-import AudioElement from "./components/AudioElement";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import { useAuth } from "./context/AuthContext";
 
@@ -34,7 +33,6 @@ function AppRoutes() {
           path="/"
           element={
             <ProtectedRoute>
-              {isAuthenticated && <AudioElement />}
               <Home />
               {isAuthenticated && <MusicPlayer />}
             </ProtectedRoute>
