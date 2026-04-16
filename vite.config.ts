@@ -372,7 +372,7 @@ export default defineConfig(({ mode }) => {
       babel({ presets: [reactCompilerPreset()] }),
       VitePWA({
         devOptions: {
-          enabled: false,
+          enabled: true,
         },
         registerType: 'autoUpdate',
         strategies: 'generateSW',
@@ -389,15 +389,15 @@ export default defineConfig(({ mode }) => {
           theme_color: '#000000',
           icons: [
             {
-              src: '/favicon.svg',
+              src: '/pwa-192.png',
               sizes: '192x192',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any maskable',
             },
             {
-              src: '/favicon.svg',
+              src: '/pwa-512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
             },
           ],
         },

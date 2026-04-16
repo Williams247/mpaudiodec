@@ -88,6 +88,17 @@ function normalizeMediaUrl(rawUrl?: string): string {
   return cleaned;
 }
 
+function sanitizeDisplayText(raw?: string): string {
+  if (!raw) return "";
+  return raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\boff(?:i)?cial\s+music\s+video\b/gi, "")
+    .replace(/\boff(?:i)?cial\s*video\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function pickAudioFileUrl(music: ApiMusic): string {
   const candidates: Array<string | undefined> = [
     music.signed_music_url,
@@ -115,7 +126,7 @@ function normalizeMusic(music: ApiMusic): Song {
   return {
     id: music.id,
     title: music.title,
-    artist: music.filename || "Unknown Artist",
+    artist: sanitizeDisplayText(music.filename) || "Unknown Artist",
     duration: parseDurationToSeconds(music.duration),
     thumbnail: normalizeMediaUrl(music.thumbnail_url || music.thumbnail),
     description: music.description ?? "",
