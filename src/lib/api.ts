@@ -1,9 +1,7 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
-const API_BASE_URL = import.meta.env.DEV
-  ? "/backend"
-  : configuredApiBaseUrl ?? "https://audiodec-api.onrender.com";
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const API_BASE_URL = configuredApiBaseUrl ?? "";
 
 const AUTH_TOKEN_KEY = "authToken";
 
@@ -24,6 +22,9 @@ async function request<T>(
   options: RequestInit = {},
   withAuth = false,
 ): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new Error("VITE_API_BASE_URL is not configured");
+  }
   const headers = new Headers(options.headers ?? {});
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");

@@ -415,14 +415,6 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       https: useDevHttps ? {} : false,
-      proxy: {
-        '/backend': {
-          target: 'https://audiodec-api.onrender.com',
-          changeOrigin: true,
-          secure: true,
-          rewrite: (requestPath) => requestPath.replace(/^\/backend/, ''),
-        },
-      },
     },
   }
 })

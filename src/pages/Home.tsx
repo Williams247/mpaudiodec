@@ -130,8 +130,8 @@ export default function Home() {
         {/* Header */}
         <header className="max-w-[1400px] mx-auto px-4 md:px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.35)]">
-              <Music className="w-5 h-5" />
+            <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 shadow-[0_0_20px_rgba(34,197,94,0.2)] overflow-hidden">
+              <img src="/favicon.png" alt="AudioDec icon" className="w-full h-full object-cover" />
             </button>
             <button
               onClick={() => {
