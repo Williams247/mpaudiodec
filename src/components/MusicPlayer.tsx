@@ -19,6 +19,7 @@ export default function MusicPlayer() {
     duration,
     currentTime,
     loopMode,
+    audioRef,
     pause,
     resume,
     next,
@@ -31,11 +32,17 @@ export default function MusicPlayer() {
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
 
   useEffect(() => {
-    const audioRef = document.querySelector('audio');
-    if (audioRef) {
-      audioRef.volume = volume / 100;
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
     }
-  }, [volume]);
+  }, [volume, audioRef, currentSong?.id]);
+
+  const handleVolumeChange = (nextVolume: number) => {
+    setVolume(nextVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = nextVolume / 100;
+    }
+  };
 
   if (!currentSong) {
     return null;
@@ -53,19 +60,6 @@ export default function MusicPlayer() {
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black via-zinc-900 to-zinc-800 border-t border-zinc-700/50 backdrop-blur-xl z-40 shadow-2xl">
-        {/* Progress Bar */}
-        <div
-          className="h-1 bg-green-500 transition-all duration-100 cursor-pointer hover:h-1.5"
-          style={{ width: `${progress}%` }}
-          onClick={(e) => {
-            const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-            if (rect) {
-              const percent = (e.clientX - rect.left) / rect.width;
-              seek(percent * duration);
-            }
-          }}
-        />
-
         <div className="px-3 md:px-6 py-3 md:py-4">
           {/* Mobile Layout */}
           <div className="md:hidden">
@@ -168,7 +162,7 @@ export default function MusicPlayer() {
                         min="0"
                         max="100"
                         value={volume}
-                        onChange={(e) => setVolume(Number(e.target.value))}
+                        onChange={(e) => handleVolumeChange(Number(e.target.value))}
                         className="w-full h-1 bg-zinc-700 rounded-full accent-green-500 cursor-pointer"
                       />
                       <div className="text-center">
@@ -285,7 +279,7 @@ export default function MusicPlayer() {
                       min="0"
                       max="100"
                       value={volume}
-                      onChange={(e) => setVolume(Number(e.target.value))}
+                      onChange={(e) => handleVolumeChange(Number(e.target.value))}
                       className="w-full h-1 bg-zinc-700 rounded-full accent-green-500 cursor-pointer"
                     />
                     <div className="text-center">
@@ -302,7 +296,7 @@ export default function MusicPlayer() {
       {/* Close volume slider when clicking elsewhere */}
       {showVolumeSlider && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-30"
           onClick={() => setShowVolumeSlider(false)}
         />
       )}

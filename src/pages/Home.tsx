@@ -16,13 +16,15 @@ import {
   Library,
   Disc3,
   Loader2,
+  Volume2,
 } from 'lucide-react';
 
 export default function Home() {
   const { user, logout } = useAuth();
-  const { play, currentSong, isLoadingSong } = usePlayer();
+  const { play, currentSong, isLoadingSong, isPlaying } = usePlayer();
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [songs, setSongs] = useState<Song[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,12 @@ export default function Home() {
   const filteredSongs = selectedCategory === 'all'
     ? songs
     : songs.filter((song) => song.categoryId === selectedCategory);
-  const previewSong = currentSong ?? filteredSongs[0] ?? null;
+  const visibleSongs = filteredSongs.filter((song) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return song.title.toLowerCase().includes(q) || song.artist.toLowerCase().includes(q);
+  });
+  const previewSong = currentSong ?? visibleSongs[0] ?? null;
   const selectedCategoryName = selectedCategory === 'all'
     ? 'All Music'
     : categories.find((category) => category.id === selectedCategory)?.name ?? 'Category';
@@ -105,6 +112,17 @@ export default function Home() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-300">
+          <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+          <p className="text-sm tracking-wide">Loading music...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-black pb-40 md:pb-48">
       {/* Sticky Header and Category Section */}
@@ -112,15 +130,27 @@ export default function Home() {
         {/* Header */}
         <header className="max-w-[1400px] mx-auto px-4 md:px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 text-white">
+            <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.35)]">
               <Music className="w-5 h-5" />
             </button>
-            <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white">
+            <button
+              onClick={() => {
+                setSelectedCategory('all');
+                setSearchQuery('');
+              }}
+              className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white"
+              title="All categories"
+            >
               <HomeIcon className="w-5 h-5" />
             </button>
             <div className="hidden md:flex items-center gap-3 rounded-full bg-zinc-900 border border-zinc-800 px-4 py-2.5 min-w-[360px]">
               <Search className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm text-zinc-400">What do you want to play?</span>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="What do you want to play?"
+                className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none"
+              />
             </div>
             <h2 className="md:hidden text-lg font-semibold text-white">AudioDec</h2>
           </div>
@@ -210,10 +240,7 @@ export default function Home() {
       </div>
 
       <main className="max-w-[1400px] mx-auto px-4 md:px-5 py-4 md:py-5">
-        {loading && (
-          <div className="py-4 text-zinc-300">Loading music...</div>
-        )}
-        {error && !loading && (
+        {error && (
           <div className="py-4 text-red-400">{error}</div>
         )}
 
@@ -259,11 +286,10 @@ export default function Home() {
           <section className="col-span-6 xl:col-span-6 rounded-xl border border-zinc-800/70 overflow-hidden bg-zinc-950/95">
             <div className="bg-gradient-to-b from-indigo-700/70 via-indigo-900/30 to-zinc-950 px-5 py-6">
               <div>
-                <p className="text-sm text-zinc-200/90">Category</p>
-                <h2 className="mt-1 text-4xl lg:text-5xl font-bold text-white tracking-tight">
+                <p className="text-sm lg:text-base font-medium uppercase tracking-[0.18em] text-zinc-200/85">Category</p>
+                <h2 className="mt-2 text-sm md:text-md lg:text-lg font-black text-white tracking-[-0.03em] leading-[0.85]">
                   {selectedCategoryName}
                 </h2>
-                <p className="text-sm text-zinc-300 mt-3">{user?.email} • {filteredSongs.length} songs</p>
               </div>
             </div>
 
@@ -281,51 +307,68 @@ export default function Home() {
 
               <div className="grid grid-cols-[56px_minmax(0,1fr)_120px] items-center px-4 py-3 text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800/80">
                 <span>#</span>
-                <span>Title</span>
-                <span className="justify-self-end"><Clock3 className="w-4 h-4" /></span>
+                <span className="pl-[52px]">Title</span>
+                <span className="justify-self-start"><Clock3 className="w-4 h-4" /></span>
               </div>
               <div className="max-h-[430px] overflow-y-auto scrollbar-hide">
-                {filteredSongs.map((song, index) => (
-                  <button
-                    key={song.id}
-                    onClick={() => handlePlaySong(song)}
-                    className="w-full grid grid-cols-[56px_minmax(0,1fr)_120px] items-center px-4 py-3 text-left border-b border-zinc-900/80 last:border-b-0 hover:bg-zinc-800/40 transition"
-                  >
-                    <span className="text-sm text-zinc-500">
-                      {isLoadingSong && currentSong?.id === song.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-green-400" />
-                      ) : (
-                        index + 1
-                      )}
-                    </span>
-                    <span className="flex items-center gap-3 min-w-0">
-                      <span className="w-10 h-10 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0">
-                        {song.thumbnail ? (
-                          <img
-                            src={song.thumbnail}
-                            alt={song.title}
-                            className="w-full h-full object-cover"
-                          />
+                {visibleSongs.map((song, index) => {
+                  const isActiveSong = currentSong?.id === song.id;
+                  const isSongLoading = isLoadingSong && isActiveSong;
+                  const isSongPlaying = isPlaying && isActiveSong && !isSongLoading;
+
+                  return (
+                    <button
+                      key={song.id}
+                      onClick={() => handlePlaySong(song)}
+                      className={`w-full grid grid-cols-[56px_minmax(0,1fr)_120px] items-center px-4 py-3 text-left border-b border-zinc-900/80 last:border-b-0 transition ${
+                        isActiveSong
+                          ? 'bg-zinc-800/55'
+                          : 'hover:bg-zinc-800/40'
+                      }`}
+                    >
+                      <span className="text-sm text-zinc-500">
+                        {isSongLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                        ) : isSongPlaying ? (
+                          <Volume2 className="w-4 h-4 text-green-400" />
                         ) : (
-                          <span className="w-full h-full flex items-center justify-center">
-                            <Music className="w-4 h-4 text-zinc-500" />
-                          </span>
+                          index + 1
                         )}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-white">{song.title}</span>
-                        <span className="block truncate text-xs text-zinc-400 mt-0.5">{song.artist}</span>
+                      <span className="flex items-center gap-3 min-w-0">
+                        <span className="w-10 h-10 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0">
+                          {song.thumbnail ? (
+                            <img
+                              src={song.thumbnail}
+                              alt={song.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center">
+                              <Music className="w-4 h-4 text-zinc-500" />
+                            </span>
+                          )}
+                        </span>
+                        <span className="min-w-0">
+                          <span className={`block truncate text-sm font-medium ${isActiveSong ? 'text-green-400' : 'text-white'}`}>
+                            {song.title}
+                          </span>
+                          <span className={`block truncate text-xs mt-0.5 ${isActiveSong ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                            {song.artist}
+                          </span>
+                        </span>
                       </span>
-                    </span>
-                    <span className="justify-self-end text-sm text-zinc-400">{formatDuration(song.duration)}</span>
-                  </button>
-                ))}
+                      <span className={`justify-self-end text-sm ${isActiveSong ? 'text-green-400' : 'text-zinc-400'}`}>
+                        {formatDuration(song.duration)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </section>
 
-          <aside className="col-span-3 xl:col-span-3 rounded-xl border border-zinc-800/70 bg-zinc-950/95 p-4 lg:p-5">
-            <p className="text-sm font-semibold text-white">{selectedCategoryName}</p>
+          <aside className="col-span-3 xl:col-span-3 rounded-xl border border-zinc-800/70 bg-gradient-to-b from-zinc-950 to-black p-4 lg:p-5">
             {previewSong ? (
               <div className="mt-4">
                 <div className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800/80">
@@ -341,12 +384,14 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-                <h3 className="mt-4 text-3xl font-bold text-white leading-tight">{previewSong.title}</h3>
-                <p className="text-sm text-zinc-400 mt-1 truncate">{previewSong.artist}</p>
+                <h3 className="mt-4 text-2xl lg:text-3xl font-bold text-white leading-tight break-words">
+                  {previewSong.title}
+                </h3>
+                <p className="text-sm text-zinc-400 mt-2 truncate">{previewSong.artist}</p>
                 <p className="text-xs text-zinc-500 mt-2">{formatDuration(previewSong.duration)}</p>
                 <button
                   onClick={() => handlePlaySong(previewSong)}
-                  className="mt-4 w-full rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black hover:bg-green-400 transition"
+                  className="mt-5 w-full rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black hover:bg-green-400 transition"
                 >
                   Play this track
                 </button>
@@ -360,7 +405,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="mt-4 rounded-xl border border-dashed border-zinc-700 p-6 text-center text-zinc-500 text-sm">
-                No tracks in this category yet.
+                No tracks found for this search.
               </div>
             )}
           </aside>
@@ -368,7 +413,7 @@ export default function Home() {
 
         {/* Mobile List View */}
         <div className="md:hidden space-y-2 mb-8">
-          {filteredSongs.map((song) => (
+          {visibleSongs.map((song) => (
             <div
               key={song.id}
               onClick={() => handlePlaySong(song)}
