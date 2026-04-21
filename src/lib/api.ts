@@ -6,6 +6,18 @@ const API_BASE_URL = configuredApiBaseUrl?.replace(/\/+$/, "") ?? "";
 
 const AUTH_TOKEN_KEY = "authToken";
 
+export class ApiRequestError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
@@ -60,7 +72,7 @@ async function request<T>(
     } else if (typeof payload === "string" && payload.trim().length > 0) {
       message = payload;
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status, payload);
   }
 
   return payload as T;
@@ -333,9 +345,11 @@ async function unwrapFetchMusicPayload(payload: unknown): Promise<FetchMusicResp
 
   const rec = payload as Record<string, unknown>;
   const blob =
-    typeof rec.audio === "string"
-      ? rec.audio
-      : typeof rec.encryptedPayload === "string"
+    typeof rec.result === "string"
+      ? rec.result
+      : typeof rec.audio === "string"
+        ? rec.audio
+        : typeof rec.encryptedPayload === "string"
         ? rec.encryptedPayload
         : null;
 

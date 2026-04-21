@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ApiRequestError,
   clearAuthToken,
   fetchCurrentUser,
   getAuthToken,
@@ -24,13 +25,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Initialize auth state from localStorage
 function getInitialAuthState() {
   try {
-    const storedAuth = localStorage.getItem('isAuthenticated');
     const storedUser = localStorage.getItem('user');
     const storedToken = getAuthToken();
-    if (storedAuth === 'true' && storedUser && storedToken) {
+    if (storedToken) {
+      let parsedUser: { email: string; name?: string } | null = null;
+      if (storedUser) {
+        try {
+          parsedUser = JSON.parse(storedUser) as { email: string; name?: string };
+        } catch {
+          parsedUser = null;
+        }
+      }
       return {
         isAuthenticated: true,
-        user: JSON.parse(storedUser),
+        user: parsedUser,
       };
     }
   } catch {
@@ -76,12 +84,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: userInfo.name,
         }));
         localStorage.setItem("isAuthenticated", "true");
-      } catch {
-        clearAuthToken();
-        localStorage.removeItem("user");
-        localStorage.removeItem("isAuthenticated");
-        setUser(null);
-        setIsAuthenticated(false);
+      } catch (error) {
+        const status = error instanceof ApiRequestError ? error.status : null;
+        if (status === 401 || status === 403) {
+          clearAuthToken();
+          localStorage.removeItem("user");
+          localStorage.removeItem("isAuthenticated");
+          setUser(null);
+          setIsAuthenticated(false);
+        }
       }
     };
 
