@@ -8,9 +8,16 @@ import { Readable } from 'node:stream'
 import { VitePWA } from 'vite-plugin-pwa'
 
 type B2AuthResponse = {
+  accountId: string
   apiUrl: string
   authorizationToken: string
   downloadUrl: string
+  allowed?: {
+    bucketId?: string
+    bucketName?: string
+    capabilities?: string[]
+    namePrefix?: string | null
+  }
 }
 
 let b2AuthCache: B2AuthResponse | null = null
@@ -61,18 +68,47 @@ async function getSignedBackblazeUrl(args: {
   ttlSeconds: number
 }): Promise<string> {
   const auth = await getB2Auth(args.keyId, args.applicationKey)
-  const response = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_download_authorization`, {
-    method: 'POST',
-    headers: {
-      Authorization: auth.authorizationToken,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bucketId: args.bucketId,
-      fileNamePrefix: args.fileName,
-      validDurationInSeconds: args.ttlSeconds,
-    }),
-  })
+  const resolveEffectiveBucketId = () => {
+    const fromEnv = args.bucketId?.trim()
+    if (fromEnv) return fromEnv
+    return auth.allowed?.bucketId?.trim() || ''
+  }
+
+  const requestDownloadAuthorization = async (bucketId: string) =>
+    fetch(`${auth.apiUrl}/b2api/v2/b2_get_download_authorization`, {
+      method: 'POST',
+      headers: {
+        Authorization: auth.authorizationToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bucketId,
+        fileNamePrefix: args.fileName,
+        validDurationInSeconds: args.ttlSeconds,
+      }),
+    })
+
+  let usedBucketId = resolveEffectiveBucketId()
+  if (!usedBucketId) {
+    throw new Error('Missing Backblaze bucket ID; set B2_BUCKET_ID or use a bucket-scoped key')
+  }
+
+  let response = await requestDownloadAuthorization(usedBucketId)
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as
+      | { code?: string; message?: string }
+      | null
+
+    const allowedBucketId = auth.allowed?.bucketId?.trim()
+    const canRetryWithAllowedBucket =
+      !!allowedBucketId && allowedBucketId !== usedBucketId && payload?.code === 'bad_request'
+
+    if (canRetryWithAllowedBucket) {
+      usedBucketId = allowedBucketId
+      response = await requestDownloadAuthorization(usedBucketId)
+    }
+  }
+
   if (!response.ok) {
     throw new Error('Failed to get Backblaze download authorization')
   }
@@ -346,12 +382,39 @@ function installB2SignDownloadMiddleware(middlewares: ConnectMiddlewares, env: R
 }
 
 function b2SignerPlugin(env: Record<string, string>) {
+  const logB2StartupHealth = async () => {
+    const keyId = env.B2_KEY_ID
+    const applicationKey = env.B2_APPLICATION_KEY
+    const bucketName = env.B2_BUCKET_NAME
+
+    if (!keyId || !applicationKey || !bucketName) {
+      console.warn('[b2] startup check skipped: missing B2_KEY_ID/B2_APPLICATION_KEY/B2_BUCKET_NAME')
+      return
+    }
+
+    const keyHint = `${keyId.slice(0, 6)}...${keyId.slice(-4)}`
+    try {
+      const auth = await getB2Auth(keyId, applicationKey)
+      const allowedBucket =
+        (auth as unknown as { allowed?: { bucketName?: string; bucketId?: string } }).allowed?.bucketName ||
+        (auth as unknown as { allowed?: { bucketName?: string; bucketId?: string } }).allowed?.bucketId ||
+        'all-buckets'
+      console.info(`[b2] startup auth OK (key=${keyHint}, envBucket=${bucketName}, allowed=${allowedBucket})`)
+    } catch (error) {
+      b2AuthCache = null
+      const message = error instanceof Error ? error.message : 'unknown error'
+      console.error(`[b2] startup auth FAILED (key=${keyHint}, envBucket=${bucketName}): ${message}`)
+    }
+  }
+
   return {
     name: 'b2-private-signing-endpoint',
     configureServer(server: { middlewares: ConnectMiddlewares }) {
+      void logB2StartupHealth()
       installB2SignDownloadMiddleware(server.middlewares, env)
     },
     configurePreviewServer(server: { middlewares: ConnectMiddlewares }) {
+      void logB2StartupHealth()
       installB2SignDownloadMiddleware(server.middlewares, env)
     },
   }

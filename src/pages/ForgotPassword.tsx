@@ -64,10 +64,10 @@ export default function ForgotPassword() {
               className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition"
             />
             {fieldErrors.email && (
-              <p className="mt-1 text-xs text-red-400">{fieldErrors.email}</p>
+              <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.email}</p>
             )}
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-400 text-left">{error}</p>}
           {success && <p className="text-sm text-green-400">{success}</p>}
           <button
             type="submit"

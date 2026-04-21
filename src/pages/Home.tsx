@@ -19,6 +19,8 @@ import {
   Volume2,
 } from 'lucide-react';
 
+const MEDIA_URLS_EXPIRES_AT_KEY = 'mediaUrlsExpiresAt';
+
 export default function Home() {
   const { user, logout } = useAuth();
   const { play, currentSong, isLoadingSong, isPlaying } = usePlayer();
@@ -27,6 +29,14 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [songs, setSongs] = useState<Song[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  /** Unix ms from API `media_urls_expires_at` — used to schedule silent URL refresh (Cloudinary signed URLs). */
+  const [mediaUrlsExpiresAt, setMediaUrlsExpiresAt] = useState<number | null>(() => {
+    const saved = sessionStorage.getItem(MEDIA_URLS_EXPIRES_AT_KEY);
+    if (!saved) return null;
+    const parsed = Number(saved);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed > Date.now() ? parsed : null;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -55,6 +65,7 @@ export default function Home() {
     if (!q) return true;
     return song.title.toLowerCase().includes(q) || song.artist.toLowerCase().includes(q);
   });
+  
   const previewSong = currentSong ?? visibleSongs[0] ?? null;
   const selectedCategoryName = selectedCategory === 'all'
     ? 'All Music'
@@ -82,15 +93,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (mediaUrlsExpiresAt == null) {
+      sessionStorage.removeItem(MEDIA_URLS_EXPIRES_AT_KEY);
+      return;
+    }
+    sessionStorage.setItem(MEDIA_URLS_EXPIRES_AT_KEY, String(mediaUrlsExpiresAt));
+  }, [mediaUrlsExpiresAt]);
+
+  useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       setError('');
       try {
-        const [musicList, categoryList] = await Promise.all([
+        const [musicResult, categoryList] = await Promise.all([
           fetchMusic(),
           fetchMusicCategories(),
         ]);
-        setSongs(musicList);
+        setSongs(musicResult.songs);
+        setMediaUrlsExpiresAt(musicResult.mediaUrlsExpiresAt);
         setCategories(categoryList);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch music data');
@@ -100,6 +120,24 @@ export default function Home() {
     };
     void loadData();
   }, []);
+
+  // Align with API `media_urls_expires_at`: refresh the library shortly before signed URLs expire.
+  useEffect(() => {
+    if (mediaUrlsExpiresAt == null) return;
+    const delay = Math.max(10_000, mediaUrlsExpiresAt - Date.now() - 30_000);
+    const id = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const next = await fetchMusic();
+          setSongs(next.songs);
+          setMediaUrlsExpiresAt(next.mediaUrlsExpiresAt);
+        } catch {
+          /* keep existing songs; next navigation or manual refresh can recover */
+        }
+      })();
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [mediaUrlsExpiresAt]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {

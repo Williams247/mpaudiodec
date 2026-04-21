@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Eye, EyeOff, Music } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 
 const loginSchema = z.object({
@@ -21,6 +21,7 @@ export default function Login() {
     email?: string;
     password?: string;
   }>({});
+  
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -59,10 +60,10 @@ export default function Login() {
         <div className="bg-zinc-800/50 backdrop-blur-xl rounded-2xl p-5 border border-zinc-700/50">
           {/* Header */}
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="bg-green-500 p-2.5 rounded-lg">
-              <Music className="w-3 h-3 text-black" />
+            <div>
+              <img src="/favicon.png" alt="MpAudiodec logo" className="w-8 h-8 object-cover" />
             </div>
-            <h3 className="text-xl font-bold text-white">AudioDec</h3>
+            <h3 className="text-xl font-bold text-white">MpAudiodec</h3>
           </div>
 
 
@@ -84,7 +85,7 @@ export default function Login() {
                 className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition"
               />
               {fieldErrors.email && (
-                <p className="mt-1 text-xs text-red-400">{fieldErrors.email}</p>
+                <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.email}</p>
               )}
             </div>
 
@@ -114,7 +115,7 @@ export default function Login() {
                 </button>
               </div>
               {fieldErrors.password && (
-                <p className="mt-1 text-xs text-red-400">{fieldErrors.password}</p>
+                <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.password}</p>
               )}
             </div>
             <button
@@ -127,7 +128,7 @@ export default function Login() {
 
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-red-400 text-sm">{error}</p>
+                <p className="text-red-400 text-sm text-left">{error}</p>
               </div>
             )}
 

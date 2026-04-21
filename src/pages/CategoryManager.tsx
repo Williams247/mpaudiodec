@@ -73,7 +73,7 @@ export default function CategoryManager() {
         </div>
 
         {loading && <p className="text-zinc-300">Loading...</p>}
-        {error && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
+        {error && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300 text-left">{error}</p>}
         {message && <p className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-300">{message}</p>}
 
         <div className="grid gap-6">

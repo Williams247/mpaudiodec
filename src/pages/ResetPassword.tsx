@@ -88,7 +88,7 @@ export default function ResetPassword() {
               className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white"
             />
             {fieldErrors.email && (
-              <p className="mt-1 text-xs text-red-400">{fieldErrors.email}</p>
+              <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.email}</p>
             )}
           </div>
           <div>
@@ -103,7 +103,7 @@ export default function ResetPassword() {
               className="w-full px-4 py-2 bg-zinc-700/50 border border-zinc-600 rounded-lg text-white"
             />
             {fieldErrors.otpCode && (
-              <p className="mt-1 text-xs text-red-400">{fieldErrors.otpCode}</p>
+              <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.otpCode}</p>
             )}
           </div>
           <div>
@@ -128,10 +128,10 @@ export default function ResetPassword() {
               </button>
             </div>
             {fieldErrors.password && (
-              <p className="mt-1 text-xs text-red-400">{fieldErrors.password}</p>
+              <p className="mt-1 text-xs text-red-400 text-left">{fieldErrors.password}</p>
             )}
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-400 text-left">{error}</p>}
           {success && <p className="text-sm text-green-400">{success}</p>}
           <button
             type="submit"

@@ -1,4 +1,5 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
+import { decryptPayloadAesGcmBase64 } from "@/lib/payloadCrypto";
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
 const API_BASE_URL = configuredApiBaseUrl?.replace(/\/+$/, "") ?? "";
@@ -117,6 +118,23 @@ function pickAudioFileUrl(music: ApiMusic): string {
   for (const raw of candidates) {
     const normalized = normalizeMediaUrl(raw);
     if (normalized) return normalized;
+  }
+
+  // Fallback for backend payload drift: inspect similarly named keys dynamically.
+  const dynamicEntries = Object.entries(music as unknown as Record<string, unknown>);
+  for (const [key, value] of dynamicEntries) {
+    if (!/(url|audio|music|file|src)/i.test(key)) continue;
+    if (typeof value === "string") {
+      const normalized = normalizeMediaUrl(value);
+      if (normalized) return normalized;
+    }
+    if (value && typeof value === "object") {
+      for (const nestedValue of Object.values(value as Record<string, unknown>)) {
+        if (typeof nestedValue !== "string") continue;
+        const normalized = normalizeMediaUrl(nestedValue);
+        if (normalized) return normalized;
+      }
+    }
   }
   return "";
 }
@@ -269,14 +287,82 @@ export async function logoutUser() {
   );
 }
 
-export async function fetchMusic() {
-  const payload = await request<{ data?: ApiMusic[] } | ApiMusic[]>(
-    "/api/fetch-music",
-    {},
-    true,
-  );
-  const list = Array.isArray(payload) ? payload : payload.data ?? [];
-  return list.map(normalizeMusic);
+type FetchMusicResponseBody =
+  | ApiMusic[]
+  | {
+      data?: ApiMusic[];
+      media_urls_expires_at?: string;
+      media_urls_ttl_seconds?: number;
+    };
+
+export type FetchMusicResult = {
+  songs: Song[];
+  /** When Cloudinary URL refresh is enabled on the API, Unix ms when those URLs should be refreshed. */
+  mediaUrlsExpiresAt: number | null;
+  mediaUrlsTtlSeconds: number | null;
+};
+
+function parseMusicFetchPayload(payload: FetchMusicResponseBody): {
+  list: ApiMusic[];
+  mediaUrlsExpiresAt: number | null;
+  mediaUrlsTtlSeconds: number | null;
+} {
+  if (Array.isArray(payload)) {
+    return { list: payload, mediaUrlsExpiresAt: null, mediaUrlsTtlSeconds: null };
+  }
+  const o = payload as Record<string, unknown>;
+  const list = Array.isArray(o.data) ? (o.data as ApiMusic[]) : [];
+  let mediaUrlsExpiresAt: number | null = null;
+  if (typeof o.media_urls_expires_at === "string") {
+    const t = Date.parse(o.media_urls_expires_at);
+    if (!Number.isNaN(t)) {
+      mediaUrlsExpiresAt = t;
+    }
+  }
+  let mediaUrlsTtlSeconds: number | null = null;
+  if (typeof o.media_urls_ttl_seconds === "number") {
+    mediaUrlsTtlSeconds = o.media_urls_ttl_seconds;
+  }
+  return { list, mediaUrlsExpiresAt, mediaUrlsTtlSeconds };
+}
+
+async function unwrapFetchMusicPayload(payload: unknown): Promise<FetchMusicResponseBody> {
+  if (!payload || typeof payload !== "object") {
+    return payload as FetchMusicResponseBody;
+  }
+
+  const rec = payload as Record<string, unknown>;
+  const blob =
+    typeof rec.audio === "string"
+      ? rec.audio
+      : typeof rec.encryptedPayload === "string"
+        ? rec.encryptedPayload
+        : null;
+
+  if (!blob) {
+    return payload as FetchMusicResponseBody;
+  }
+
+  const key = (import.meta.env.VITE_API_PAYLOAD_ENCRYPTION_KEY ?? "").trim();
+  if (!key) {
+    throw new Error(
+      "Music list is encrypted. Set VITE_API_PAYLOAD_ENCRYPTION_KEY (same as API API_PAYLOAD_ENCRYPTION_KEY).",
+    );
+  }
+
+  const plain = await decryptPayloadAesGcmBase64(blob, key);
+  return JSON.parse(plain) as FetchMusicResponseBody;
+}
+
+export async function fetchMusic(): Promise<FetchMusicResult> {
+  const raw = await request<unknown>("/api/fetch-music", {}, true);
+  const payload = await unwrapFetchMusicPayload(raw);
+  const { list, mediaUrlsExpiresAt, mediaUrlsTtlSeconds } = parseMusicFetchPayload(payload);
+  return {
+    songs: list.map(normalizeMusic),
+    mediaUrlsExpiresAt,
+    mediaUrlsTtlSeconds,
+  };
 }
 
 export async function fetchMusicCategories() {

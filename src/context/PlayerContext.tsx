@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useRef, useLayoutEffect } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { Song } from '@/types/music';
+import { getAuthToken } from '@/lib/api';
 
 type LoopMode = 'none' | '1x' | '2x' | '3x' | '4x' | '5x' | '6x' | 'forever';
 
@@ -57,11 +58,47 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     try {
       const u = new URL(urlString);
       const q = u.searchParams;
+      const nowEpochSeconds = Math.floor(Date.now() / 1000);
+
+      const isExpiredLegacySignature = () => {
+        const expiresRaw = q.get('Expires');
+        if (!expiresRaw) return false;
+        const expiresAt = Number(expiresRaw);
+        if (!Number.isFinite(expiresAt)) return false;
+        return nowEpochSeconds >= expiresAt - 10;
+      };
+
+      const isExpiredAmzSignature = () => {
+        const amzDate = q.get('X-Amz-Date');
+        const amzExpires = q.get('X-Amz-Expires');
+        if (!amzDate || !amzExpires) return false;
+        // Format: YYYYMMDDTHHmmssZ
+        const match = amzDate.match(
+          /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+        );
+        if (!match) return false;
+        const [, y, m, d, hh, mm, ss] = match;
+        const issuedAtMs = Date.UTC(
+          Number(y),
+          Number(m) - 1,
+          Number(d),
+          Number(hh),
+          Number(mm),
+          Number(ss),
+        );
+        const ttlSeconds = Number(amzExpires);
+        if (!Number.isFinite(issuedAtMs) || !Number.isFinite(ttlSeconds)) {
+          return false;
+        }
+        const expiresAt = Math.floor(issuedAtMs / 1000) + ttlSeconds;
+        return nowEpochSeconds >= expiresAt - 10;
+      };
+
       if (q.has('X-Amz-Algorithm') || q.has('X-Amz-Credential') || q.has('X-Amz-Signature')) {
-        return true;
+        return !isExpiredAmzSignature();
       }
       if (q.has('Signature') || q.has('AWSAccessKeyId')) {
-        return true;
+        return !isExpiredLegacySignature();
       }
       // Native B2 download tokens
       if (q.has('Authorization') && u.pathname.includes('/file/')) {
@@ -113,16 +150,67 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return originalUrl;
     }
 
+    const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+    const apiBaseUrl = configuredApiBaseUrl?.replace(/\/+$/, '') ?? '';
     const signEndpoint =
-      (import.meta.env.VITE_B2_SIGN_URL as string | undefined)?.trim() || '/b2/sign-download';
+      (import.meta.env.VITE_B2_SIGN_URL as string | undefined)?.trim() ||
+      (apiBaseUrl ? `${apiBaseUrl}/api/sign-download` : '/api/sign-download');
+    const token = getAuthToken();
+    const getFileNameFromBackblazeUrl = (urlString: string) => {
+      try {
+        const u = new URL(urlString);
+        const decodeSafe = (value: string) => {
+          try {
+            return decodeURIComponent(value);
+          } catch {
+            return value;
+          }
+        };
+        const normalizedPath = u.pathname.replace(/^\/+/, '');
+        if (!normalizedPath) return '';
+
+        // Native B2 form: /file/<bucket>/<path/to/object>
+        const marker = 'file/';
+        const markerIdx = normalizedPath.indexOf(marker);
+        if (markerIdx >= 0) {
+          const afterFile = normalizedPath.slice(markerIdx + marker.length);
+          const slashIdx = afterFile.indexOf('/');
+          if (slashIdx >= 0) {
+            const encodedFileName = afterFile.slice(slashIdx + 1);
+            return decodeSafe(encodedFileName).trim();
+          }
+        }
+
+        const segments = normalizedPath.split('/').filter(Boolean);
+        if (segments.length === 0) return '';
+
+        // Path-style form: /<bucket>/<path/to/object>
+        if (segments.length >= 2) {
+          return decodeSafe(segments.slice(1).join('/')).trim();
+        }
+
+        // Virtual-hosted style fallback: host is bucket, path is object key.
+        return decodeSafe(segments.join('/')).trim();
+      } catch {
+        return '';
+      }
+    };
+    const sourceFileName = getFileNameFromBackblazeUrl(originalUrl);
+
+    // Laravel validators usually expect snake_case keys (`file_name`, `source_url`).
+    const signBody = sourceFileName
+      ? { file_name: sourceFileName, fileName: sourceFileName }
+      : { source_url: originalUrl, sourceUrl: originalUrl };
 
     try {
       const response = await fetch(signEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ sourceUrl: originalUrl }),
+        body: JSON.stringify(signBody),
       });
 
       if (!response.ok) {
@@ -167,9 +255,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
       let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        // Avoid hanging spinner forever when browsers never emit canplay/error.
+        finish(el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+      }, 8000);
       const finish = (ok: boolean) => {
         if (settled) return;
         settled = true;
+        window.clearTimeout(timeoutId);
         el.removeEventListener('canplay', onCanPlay);
         el.removeEventListener('error', onError);
         resolve(ok);
