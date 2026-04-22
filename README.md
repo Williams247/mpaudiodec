@@ -20,3 +20,17 @@ npm run lint
 npm run build
 npm run start
 ```
+
+## Screenshots
+
+### Login
+
+![Login screen](docs/screenshots/login.png)
+
+### Home Player
+
+![Home player screen](docs/screenshots/home-player.png)
+
+### Repeat Settings
+
+![Repeat settings modal](docs/screenshots/repeat-settings.png)
