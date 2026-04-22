@@ -1,10 +1,15 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 import { decryptPayloadAesGcmBase64 } from "@/lib/payloadCrypto";
 
-const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-const API_BASE_URL = configuredApiBaseUrl?.replace(/\/+$/, "") ?? "";
-
 const AUTH_TOKEN_KEY = "authToken";
+const UPSTREAM_PREFIX = "/api/upstream";
+
+function toUpstreamUrl(apiPath: string): string {
+  if (!apiPath.startsWith("/api/")) {
+    throw new Error(`Invalid API path: ${apiPath}`);
+  }
+  return `${UPSTREAM_PREFIX}${apiPath.slice("/api".length)}`;
+}
 
 export class ApiRequestError extends Error {
   status: number;
@@ -19,14 +24,17 @@ export class ApiRequestError extends Error {
 }
 
 export function getAuthToken() {
+  if (typeof window === "undefined") return null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string) {
+  if (typeof window === "undefined") return;
   localStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
 export function clearAuthToken() {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
@@ -35,9 +43,6 @@ async function request<T>(
   options: RequestInit = {},
   withAuth = false,
 ): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error("VITE_API_BASE_URL is not configured");
-  }
   const headers = new Headers(options.headers ?? {});
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
@@ -49,7 +54,7 @@ async function request<T>(
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(toUpstreamUrl(path), {
     ...options,
     headers,
   });
@@ -61,6 +66,20 @@ async function request<T>(
       payload = JSON.parse(text);
     } catch {
       payload = text;
+    }
+  }
+
+  if (response.ok && payload && typeof payload === "object") {
+    const rec = payload as Record<string, unknown>;
+    if (typeof rec.res === "string") {
+      const key = (process.env.NEXT_PUBLIC_API_PAYLOAD_ENCRYPTION_KEY ?? "").trim();
+      if (!key) {
+        throw new Error(
+          "Encrypted response received. Set NEXT_PUBLIC_API_PAYLOAD_ENCRYPTION_KEY to decrypt in browser.",
+        );
+      }
+      const plain = await decryptPayloadAesGcmBase64(rec.res, key);
+      payload = JSON.parse(plain) as unknown;
     }
   }
 
@@ -85,14 +104,14 @@ function parseDurationToSeconds(duration: string): number {
 
 function categoryToIcon(name: string): string {
   const normalized = name.toLowerCase();
-  if (normalized.includes("jazz")) return "🎺";
-  if (normalized.includes("rock")) return "🎸";
-  if (normalized.includes("hip")) return "🎙️";
-  if (normalized.includes("electronic")) return "🎛️";
-  if (normalized.includes("class")) return "🎻";
-  if (normalized.includes("culture")) return "🌍";
-  if (normalized.includes("pop")) return "🎤";
-  return "🎵";
+  if (normalized.includes("jazz")) return "JAZZ";
+  if (normalized.includes("rock")) return "ROCK";
+  if (normalized.includes("hip")) return "HIP";
+  if (normalized.includes("electronic")) return "ELEC";
+  if (normalized.includes("class")) return "CLAS";
+  if (normalized.includes("culture")) return "CULT";
+  if (normalized.includes("pop")) return "POP";
+  return "MUSIC";
 }
 
 function normalizeMediaUrl(rawUrl?: string): string {
@@ -132,7 +151,6 @@ function pickAudioFileUrl(music: ApiMusic): string {
     if (normalized) return normalized;
   }
 
-  // Fallback for backend payload drift: inspect similarly named keys dynamically.
   const dynamicEntries = Object.entries(music as unknown as Record<string, unknown>);
   for (const [key, value] of dynamicEntries) {
     if (!/(url|audio|music|file|src)/i.test(key)) continue;
@@ -198,57 +216,14 @@ type LoginResponse = {
   };
 };
 
-export async function loginUser(email: string, password: string) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedPassword = password;
-
-  let payload: LoginResponse | null = null;
-  let lastError: unknown = null;
-
-  // Some deployments may validate different login payload shapes.
-  const attempts: Array<() => Promise<LoginResponse>> = [
-    () =>
-      request<LoginResponse>("/api/login", {
-        method: "POST",
-        body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
-      }),
-    () =>
-      request<LoginResponse>("/api/login", {
-        method: "POST",
-        body: JSON.stringify({ username: normalizedEmail, password: normalizedPassword }),
-      }),
-    () =>
-      request<LoginResponse>("/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          email: normalizedEmail,
-          password: normalizedPassword,
-        }).toString(),
-      }),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      payload = await attempt();
-      break;
-    } catch (error) {
-      lastError = error;
-      if (!(error instanceof Error) || !error.message.toLowerCase().includes("unauthorized")) {
-        throw error;
-      }
-    }
-  }
-
-  if (!payload) {
-    if (lastError instanceof Error) {
-      throw lastError;
-    }
-    throw new Error("Unable to login with the provided credentials");
-  }
-
+function mapLoginResponse(
+  payload: LoginResponse,
+  fallbackEmail: string,
+): {
+  token: string | null;
+  user: { email?: string; name?: string };
+  message: string;
+} {
   const token =
     payload?.data?.token ||
     payload?.data?.access_token ||
@@ -260,9 +235,47 @@ export async function loginUser(email: string, password: string) {
 
   return {
     token,
-    user: payload?.data?.user || payload?.user || { email: normalizedEmail },
+    user: payload?.data?.user || payload?.user || { email: fallbackEmail },
     message: payload?.message || "Login successful",
   };
+}
+
+export async function loginUser(email: string, password: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedPassword = password;
+
+  let lastError: unknown = null;
+
+  const attempts: Array<() => Promise<LoginResponse>> = [
+    () =>
+      request<LoginResponse>("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
+      }),
+    () =>
+      request<LoginResponse>("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ username: normalizedEmail, password: normalizedPassword }),
+      }),
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const payload = await attempt();
+      return mapLoginResponse(payload, normalizedEmail);
+    } catch (error) {
+      lastError = error;
+      const retry = error instanceof ApiRequestError && error.status === 401;
+      if (!retry) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Unable to login with the provided credentials");
 }
 
 export async function fetchCurrentUser() {
@@ -309,7 +322,6 @@ type FetchMusicResponseBody =
 
 export type FetchMusicResult = {
   songs: Song[];
-  /** When Cloudinary URL refresh is enabled on the API, Unix ms when those URLs should be refreshed. */
   mediaUrlsExpiresAt: number | null;
   mediaUrlsTtlSeconds: number | null;
 };
@@ -338,39 +350,24 @@ function parseMusicFetchPayload(payload: FetchMusicResponseBody): {
   return { list, mediaUrlsExpiresAt, mediaUrlsTtlSeconds };
 }
 
-async function unwrapFetchMusicPayload(payload: unknown): Promise<FetchMusicResponseBody> {
+function unwrapFetchMusicPayload(payload: unknown): FetchMusicResponseBody {
   if (!payload || typeof payload !== "object") {
     return payload as FetchMusicResponseBody;
   }
 
   const rec = payload as Record<string, unknown>;
-  const blob =
-    typeof rec.result === "string"
-      ? rec.result
-      : typeof rec.audio === "string"
-        ? rec.audio
-        : typeof rec.encryptedPayload === "string"
-        ? rec.encryptedPayload
-        : null;
-
-  if (!blob) {
-    return payload as FetchMusicResponseBody;
-  }
-
-  const key = (import.meta.env.VITE_API_PAYLOAD_ENCRYPTION_KEY ?? "").trim();
-  if (!key) {
+  if (typeof rec.res === "string") {
     throw new Error(
-      "Music list is encrypted. Set VITE_API_PAYLOAD_ENCRYPTION_KEY (same as API API_PAYLOAD_ENCRYPTION_KEY).",
+      "Music list is encrypted (res) and is intentionally not decrypted in server actions.",
     );
   }
 
-  const plain = await decryptPayloadAesGcmBase64(blob, key);
-  return JSON.parse(plain) as FetchMusicResponseBody;
+  return payload as FetchMusicResponseBody;
 }
 
 export async function fetchMusic(): Promise<FetchMusicResult> {
   const raw = await request<unknown>("/api/fetch-music", {}, true);
-  const payload = await unwrapFetchMusicPayload(raw);
+  const payload = unwrapFetchMusicPayload(raw);
   const { list, mediaUrlsExpiresAt, mediaUrlsTtlSeconds } = parseMusicFetchPayload(payload);
   return {
     songs: list.map(normalizeMusic),
@@ -418,4 +415,3 @@ export async function updateMusicCategory(params: {
     true,
   );
 }
-

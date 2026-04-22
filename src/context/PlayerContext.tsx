@@ -1,3 +1,5 @@
+'use client';
+
 import { createContext, useContext, useState, useRef, useLayoutEffect } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { Song } from '@/types/music';
@@ -115,7 +117,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
    * Nesting presigned URLs in `?url=` breaks signatures (double-encoded `%`).
    */
   const registerDevAudioProxySession = async (httpUrl: string) => {
-    if (!import.meta.env.DEV) return httpUrl;
+    if (process.env.NODE_ENV !== 'development') return httpUrl;
     try {
       const u = new URL(httpUrl);
       const host = u.hostname.toLowerCase();
@@ -126,7 +128,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return httpUrl;
     }
 
-    const response = await fetch('/dev-audio-proxy/session', {
+    const response = await fetch('/api/dev-audio-proxy/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: httpUrl }),
@@ -137,7 +139,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     const payload = (await response.json()) as { id?: string };
     if (!payload.id) return httpUrl;
-    return `/dev-audio-proxy/s/${payload.id}`;
+    return `/api/dev-audio-proxy/s/${payload.id}`;
   };
 
   /** Private native B2 file URLs may need signing via POST /b2/sign-download. Presigned URLs from the API are returned unchanged. */
@@ -150,12 +152,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return originalUrl;
     }
 
-    const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-    const apiBaseUrl = configuredApiBaseUrl?.replace(/\/+$/, '') ?? '';
-    const signEndpoint =
-      (import.meta.env.VITE_B2_SIGN_URL as string | undefined)?.trim() ||
-      (apiBaseUrl ? `${apiBaseUrl}/api/sign-download` : '/api/sign-download');
     const token = getAuthToken();
+    const signEndpoint = '/api/upstream/sign-download';
     const getFileNameFromBackblazeUrl = (urlString: string) => {
       try {
         const u = new URL(urlString);

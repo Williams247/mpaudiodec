@@ -17,12 +17,12 @@ export interface Category {
 }
 
 export const categories: Category[] = [
-  { id: 'pop', name: 'Pop', color: 'from-pink-500 to-rose-500', icon: '🎤' },
-  { id: 'rock', name: 'Rock', color: 'from-orange-500 to-red-500', icon: '🎸' },
-  { id: 'hiphop', name: 'Hip-Hop', color: 'from-purple-500 to-indigo-500', icon: '🎙️' },
-  { id: 'electronic', name: 'Electronic', color: 'from-blue-500 to-cyan-500', icon: '🎛️' },
-  { id: 'jazz', name: 'Jazz', color: 'from-amber-500 to-yellow-500', icon: '🎺' },
-  { id: 'classical', name: 'Classical', color: 'from-emerald-500 to-teal-500', icon: '🎻' },
+  { id: 'pop', name: 'Pop', color: 'from-pink-500 to-rose-500', icon: 'POP' },
+  { id: 'rock', name: 'Rock', color: 'from-orange-500 to-red-500', icon: 'ROCK' },
+  { id: 'hiphop', name: 'Hip-Hop', color: 'from-purple-500 to-indigo-500', icon: 'HIP' },
+  { id: 'electronic', name: 'Electronic', color: 'from-blue-500 to-cyan-500', icon: 'ELEC' },
+  { id: 'jazz', name: 'Jazz', color: 'from-amber-500 to-yellow-500', icon: 'JAZZ' },
+  { id: 'classical', name: 'Classical', color: 'from-emerald-500 to-teal-500', icon: 'CLAS' },
 ];
 
 // Using free audio URLs from Pixabay/Freepik for demo purposes

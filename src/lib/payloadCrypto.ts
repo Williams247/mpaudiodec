@@ -22,6 +22,51 @@ function copyBytes(src: Uint8Array): Uint8Array {
   return out;
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    bin += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(bin);
+}
+
+/**
+ * Encrypts UTF-8 plaintext to the same format as Laravel `PayloadEncryptionService::encrypt`:
+ * base64(iv[12] + ciphertext + tag[16]), AES-256-GCM.
+ */
+export async function encryptPayloadAesGcmBase64(
+  plaintext: string,
+  keyBase64: string,
+): Promise<string> {
+  const keyBytes = copyBytes(base64ToBytes(keyBase64.trim()));
+  if (keyBytes.length !== 32) {
+    throw new Error("API payload key must be base64 encoding exactly 32 bytes");
+  }
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes as BufferSource,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const encoded = new TextEncoder().encode(plaintext);
+  const ciphertextWithTag = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: iv as BufferSource, tagLength: TAG_LENGTH_BITS },
+      cryptoKey,
+      encoded,
+    ),
+  );
+
+  const out = new Uint8Array(iv.length + ciphertextWithTag.length);
+  out.set(iv, 0);
+  out.set(ciphertextWithTag, iv.length);
+  return bytesToBase64(out);
+}
+
 export async function decryptPayloadAesGcmBase64(
   encryptedBase64: string,
   keyBase64: string,

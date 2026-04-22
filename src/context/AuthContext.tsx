@@ -1,3 +1,5 @@
+'use client';
+
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -22,44 +24,28 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Initialize auth state from localStorage
-function getInitialAuthState() {
-  try {
-    const storedUser = localStorage.getItem('user');
-    const storedToken = getAuthToken();
-    if (storedToken) {
-      let parsedUser: { email: string; name?: string } | null = null;
-      if (storedUser) {
-        try {
-          parsedUser = JSON.parse(storedUser) as { email: string; name?: string };
-        } catch {
-          parsedUser = null;
-        }
-      }
-      return {
-        isAuthenticated: true,
-        user: parsedUser,
-      };
-    }
-  } catch {
-    localStorage.removeItem('user');
-    localStorage.removeItem('isAuthenticated');
-  }
-  return {
-    isAuthenticated: false,
-    user: null,
-  };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    getInitialAuthState().isAuthenticated
-  );
-  const [user, setUser] = useState(getInitialAuthState().user);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<{ email: string; name?: string } | null>(null);
 
   useEffect(() => {
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) {
+      setIsAuthenticated(false);
+      setUser(null);
+      return;
+    }
+
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser) as { email: string; name?: string };
+        setUser(parsedUser);
+      }
+      setIsAuthenticated(true);
+    } catch {
+      // Ignore invalid local cache and rely on API restore below.
+    }
 
     const restoreSession = async () => {
       try {
