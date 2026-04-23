@@ -1,7 +1,6 @@
 {
+  "/api/upstream/[[...path]]/route": "app/api/upstream/[[...path]]/route.js",
+  "/page": "app/page.js",
   "/login/page": "app/login/page.js",
-  "/forgot-password/page": "app/forgot-password/page.js",
-  "/categories/page": "app/categories/page.js",
-  "/reset-password/page": "app/reset-password/page.js",
-  "/page": "app/page.js"
+  "/categories/page": "app/categories/page.js"
 }

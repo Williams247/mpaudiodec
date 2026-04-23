@@ -111,7 +111,7 @@ function categoryToIcon(name: string): string {
   if (normalized.includes("class")) return "CLAS";
   if (normalized.includes("culture")) return "CULT";
   if (normalized.includes("pop")) return "POP";
-  return "MUSIC";
+  return "";
 }
 
 function normalizeMediaUrl(rawUrl?: string): string {
