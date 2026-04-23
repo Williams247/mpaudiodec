@@ -180,7 +180,7 @@ export default function Home() {
         <header className="max-w-[1400px] mx-auto px-4 md:px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button className="hidden md:flex items-center justify-center w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 shadow-[0_0_20px_rgba(34,197,94,0.2)] overflow-hidden">
-              <img src="/favicon.png" alt="AudioDec icon" className="w-full h-full object-cover" />
+              <img src="/favicon.png" alt="MpAudioDec icon" className="w-full h-full object-cover" />
             </button>
             <button
               onClick={() => {
@@ -201,7 +201,7 @@ export default function Home() {
                 className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none"
               />
             </div>
-            <h2 className="md:hidden text-lg font-semibold text-white">AudioDec</h2>
+            <h2 className="md:hidden text-lg font-semibold text-white">MpAudioDec</h2>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <button
@@ -452,35 +452,63 @@ export default function Home() {
 
         {/* Mobile List View */}
         <div className="md:hidden space-y-2 mb-8">
-          {visibleSongs.map((song) => (
-            <div
-              key={song.id}
-              onClick={() => handlePlaySong(song)}
-              className="flex items-center gap-3 p-3 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg cursor-pointer transition"
-            >
-              <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-700">
-                <CoverArt
-                  src={song.thumbnail}
-                  alt={song.title}
-                  className="w-full h-full object-cover"
-                  iconClassName="w-5 h-5 text-zinc-400"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-white truncate text-sm">
-                  {song.title}
-                </h3>
-                <p className="text-xs text-zinc-400 truncate">
-                  {song.artist}
-                </p>
-              </div>
-              <div className="flex-shrink-0 text-right">
-                <p className="text-xs text-zinc-400">
-                  {formatDuration(song.duration)}
-                </p>
-              </div>
-            </div>
-          ))}
+          {visibleSongs.map((song) => {
+            const isActiveSong = currentSong?.id === song.id;
+            const isSongLoading = isLoadingSong && isActiveSong;
+            const isSongPlaying = isPlaying && isActiveSong && !isSongLoading;
+
+            return (
+              <button
+                key={song.id}
+                type="button"
+                onClick={() => handlePlaySong(song)}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition border ${
+                  isActiveSong
+                    ? 'bg-zinc-800/80 border-green-500/45 ring-1 ring-green-500/15'
+                    : 'bg-zinc-800/50 border-transparent hover:bg-zinc-700/50'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-700 ring-1 ring-black/20">
+                  <CoverArt
+                    src={song.thumbnail}
+                    alt={song.title}
+                    className="w-full h-full object-cover"
+                    iconClassName="w-5 h-5 text-zinc-400"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3
+                    className={`font-semibold truncate text-sm ${
+                      isActiveSong ? 'text-green-400' : 'text-white'
+                    }`}
+                  >
+                    {song.title}
+                  </h3>
+                  <p
+                    className={`text-xs truncate mt-0.5 ${
+                      isActiveSong ? 'text-zinc-300' : 'text-zinc-400'
+                    }`}
+                  >
+                    {song.artist}
+                  </p>
+                </div>
+                <div className="flex-shrink-0 flex flex-col items-end gap-1 min-w-[2.25rem]">
+                  {isSongLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-green-400" aria-hidden />
+                  ) : isSongPlaying ? (
+                    <Volume2 className="w-4 h-4 text-green-400" aria-hidden />
+                  ) : null}
+                  <p
+                    className={`text-xs tabular-nums ${
+                      isActiveSong ? 'text-green-400' : 'text-zinc-400'
+                    }`}
+                  >
+                    {formatDuration(song.duration)}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </main>
     </div>
