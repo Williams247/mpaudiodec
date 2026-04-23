@@ -102,15 +102,8 @@ function parseDurationToSeconds(duration: string): number {
   return mins * 60 + secs;
 }
 
-function categoryToIcon(name: string): string {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("jazz")) return "JAZZ";
-  if (normalized.includes("rock")) return "ROCK";
-  if (normalized.includes("hip")) return "HIP";
-  if (normalized.includes("electronic")) return "ELEC";
-  if (normalized.includes("class")) return "CLAS";
-  if (normalized.includes("culture")) return "CULT";
-  if (normalized.includes("pop")) return "POP";
+function categoryToIcon(name?: string): string {
+  if (!name) return "";
   return "";
 }
 
