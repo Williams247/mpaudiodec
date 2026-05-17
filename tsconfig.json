@@ -18,6 +18,7 @@
     "paths": {
       "@/*": ["./src/*"]
     },
+    "types": ["node"], // 👈 Add this line here to scope default environment definitions
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
