@@ -143,7 +143,7 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Demo info */}
+          {/* Demo information */}
         </div>
       </div>
     </div>
