@@ -22,10 +22,6 @@ async function streamSession(
   context: { params: Promise<{ id: string }> },
   method: "GET" | "HEAD",
 ) {
-  if (process.env.NODE_ENV !== "development") {
-    return new NextResponse("Not available", { status: 404 });
-  }
-
   const { id } = await context.params;
   const session = getDevAudioSession(id);
   if (!session) {

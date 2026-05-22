@@ -7,10 +7,6 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ message: "Not available" }, { status: 404 });
-  }
-
   try {
     const parsed = (await request.json()) as { url?: string };
     const targetUrl = parsed.url?.trim();

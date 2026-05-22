@@ -25,7 +25,7 @@ const MEDIA_URLS_EXPIRES_AT_KEY = 'mediaUrlsExpiresAt';
 
 export default function Home() {
   const { user, logout } = useAuth();
-  const { play, currentSong, isLoadingSong, isPlaying } = usePlayer();
+  const { play, currentSong, isLoadingSong, isPlaying, syncLibrarySongs } = usePlayer();
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -141,6 +141,7 @@ export default function Home() {
         try {
           const next = await fetchMusic();
           setSongs(next.songs);
+          syncLibrarySongs(next.songs);
           setMediaUrlsExpiresAt(next.mediaUrlsExpiresAt);
         } catch {
           /* keep existing songs; next navigation or manual refresh can recover */
@@ -148,7 +149,7 @@ export default function Home() {
       })();
     }, delay);
     return () => window.clearTimeout(id);
-  }, [mediaUrlsExpiresAt]);
+  }, [mediaUrlsExpiresAt, syncLibrarySongs]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {

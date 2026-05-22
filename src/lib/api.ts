@@ -1,5 +1,6 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 import { decryptPayloadAesGcmBase64 } from "@/lib/payloadCrypto";
+import { isExpiredSignedMediaUrl } from "@/lib/mediaUrl";
 
 const AUTH_TOKEN_KEY = "authToken";
 const UPSTREAM_PREFIX = "/api/upstream";
@@ -141,7 +142,7 @@ function pickAudioFileUrl(music: ApiMusic): string {
   ];
   for (const raw of candidates) {
     const normalized = normalizeMediaUrl(raw);
-    if (normalized) return normalized;
+    if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
   }
 
   const dynamicEntries = Object.entries(music as unknown as Record<string, unknown>);
@@ -149,13 +150,13 @@ function pickAudioFileUrl(music: ApiMusic): string {
     if (!/(url|audio|music|file|src)/i.test(key)) continue;
     if (typeof value === "string") {
       const normalized = normalizeMediaUrl(value);
-      if (normalized) return normalized;
+      if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
     }
     if (value && typeof value === "object") {
       for (const nestedValue of Object.values(value as Record<string, unknown>)) {
         if (typeof nestedValue !== "string") continue;
         const normalized = normalizeMediaUrl(nestedValue);
-        if (normalized) return normalized;
+        if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
       }
     }
   }

@@ -1,9 +1,14 @@
 'use client';
 
-import { createContext, useContext, useState, useRef, useLayoutEffect } from 'react';
+import { createContext, useContext, useState, useRef, useLayoutEffect, useCallback } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { Song } from '@/types/music';
 import { getAuthToken } from '@/lib/api';
+import {
+  artworkMimeType,
+  hasValidPresignedQuery,
+  isBackblazeUrl,
+} from '@/lib/mediaUrl';
 
 type LoopMode = 'none' | '1x' | '2x' | '3x' | '4x' | '5x' | '6x' | 'forever';
 
@@ -27,6 +32,8 @@ interface PlayerContextType {
   setLoopMode: (mode: LoopMode) => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
+  /** Refresh queue/current track URLs after the library API rotates signed media links. */
+  syncLibrarySongs: (librarySongs: Song[]) => void;
 
   // Audio element reference
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -48,107 +55,96 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const loopModeRef = useRef(loopMode);
   loopModeRef.current = loopMode;
   const nextRef = useRef<() => void>(() => {});
-
-  const isBackblazeUrl = (value: string) =>
-    value.includes('backblazeb2.com') || value.includes('backblaze');
-
-  /**
-   * API may return S3-compatible presigned URLs (Signature + Expires, or X-Amz-*).
-   * Those must be used as-is — the dev B2 signer only understands native B2 file URLs and would 500 or replace a valid URL incorrectly.
-   */
-  const isAlreadyAuthorizedDownloadUrl = (urlString: string) => {
-    try {
-      const u = new URL(urlString);
-      const q = u.searchParams;
-      const nowEpochSeconds = Math.floor(Date.now() / 1000);
-
-      const isExpiredLegacySignature = () => {
-        const expiresRaw = q.get('Expires');
-        if (!expiresRaw) return false;
-        const expiresAt = Number(expiresRaw);
-        if (!Number.isFinite(expiresAt)) return false;
-        return nowEpochSeconds >= expiresAt - 10;
-      };
-
-      const isExpiredAmzSignature = () => {
-        const amzDate = q.get('X-Amz-Date');
-        const amzExpires = q.get('X-Amz-Expires');
-        if (!amzDate || !amzExpires) return false;
-        // Format: YYYYMMDDTHHmmssZ
-        const match = amzDate.match(
-          /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
-        );
-        if (!match) return false;
-        const [, y, m, d, hh, mm, ss] = match;
-        const issuedAtMs = Date.UTC(
-          Number(y),
-          Number(m) - 1,
-          Number(d),
-          Number(hh),
-          Number(mm),
-          Number(ss),
-        );
-        const ttlSeconds = Number(amzExpires);
-        if (!Number.isFinite(issuedAtMs) || !Number.isFinite(ttlSeconds)) {
-          return false;
-        }
-        const expiresAt = Math.floor(issuedAtMs / 1000) + ttlSeconds;
-        return nowEpochSeconds >= expiresAt - 10;
-      };
-
-      if (q.has('X-Amz-Algorithm') || q.has('X-Amz-Credential') || q.has('X-Amz-Signature')) {
-        return !isExpiredAmzSignature();
-      }
-      if (q.has('Signature') || q.has('AWSAccessKeyId')) {
-        return !isExpiredLegacySignature();
-      }
-      // Native B2 download tokens
-      if (q.has('Authorization') && u.pathname.includes('/file/')) {
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  };
+  const lastPositionStateSyncRef = useRef(0);
+  const audioErrorRetriedRef = useRef(false);
+  const currentSongRef = useRef<Song | null>(null);
+  const isPlayingRef = useRef(false);
+  const isLoadingSongRef = useRef(false);
+  const controlsRef = useRef({
+    pause: () => {},
+    resume: () => {},
+    next: () => {},
+    previous: () => {},
+    seek: (_time: number) => {},
+  });
+  currentSongRef.current = currentSong;
+  isPlayingRef.current = isPlaying;
+  isLoadingSongRef.current = isLoadingSong;
 
   /**
-   * Dev/preview: register the real Backblaze URL via POST, then play a short same-origin path.
-   * Nesting presigned URLs in `?url=` breaks signatures (double-encoded `%`).
+   * Same-origin stream for Backblaze (Range-friendly). Required for reliable lock-screen controls on iOS/Android.
    */
-  const registerDevAudioProxySession = async (httpUrl: string) => {
-    if (process.env.NODE_ENV !== 'development') return httpUrl;
+  const registerAudioProxySession = async (httpUrl: string) => {
+    if (!isBackblazeUrl(httpUrl)) return httpUrl;
+
     try {
-      const u = new URL(httpUrl);
-      const host = u.hostname.toLowerCase();
-      if (!host.includes('backblazeb2.com') && !host.includes('backblaze')) {
+      const response = await fetch('/api/dev-audio-proxy/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: httpUrl }),
+      });
+      if (!response.ok) {
+        console.warn('audio proxy session failed', response.status);
         return httpUrl;
       }
-    } catch {
+      const payload = (await response.json()) as { id?: string };
+      if (!payload.id) return httpUrl;
+      return `/api/dev-audio-proxy/s/${payload.id}`;
+    } catch (error) {
+      console.warn('audio proxy session error', error);
       return httpUrl;
     }
-
-    const response = await fetch('/api/dev-audio-proxy/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: httpUrl }),
-    });
-    if (!response.ok) {
-      console.warn('dev-audio-proxy session failed', response.status);
-      return httpUrl;
-    }
-    const payload = (await response.json()) as { id?: string };
-    if (!payload.id) return httpUrl;
-    return `/api/dev-audio-proxy/s/${payload.id}`;
   };
 
+  const syncMediaSession = useCallback((song: Song, playing: boolean) => {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      const type = song.thumbnail ? artworkMimeType(song.thumbnail) : 'image/jpeg';
+      const artwork = song.thumbnail
+        ? (['96x96', '128x128', '256x256', '512x512'] as const).map((sizes) => ({
+            src: song.thumbnail,
+            sizes,
+            type,
+          }))
+        : [];
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song.title,
+        artist: song.artist,
+        artwork,
+      });
+      navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    } catch (e) {
+      console.warn('Media session metadata failed', e);
+    }
+  }, []);
+
+  const updateMediaSessionPosition = useCallback(() => {
+    if (!('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) {
+      return;
+    }
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    const now = Date.now();
+    if (now - lastPositionStateSyncRef.current < 900) return;
+    lastPositionStateSyncRef.current = now;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: audio.duration,
+        playbackRate: audio.playbackRate || 1,
+        position: Math.min(audio.currentTime, audio.duration),
+      });
+    } catch {
+      /* Safari may reject until metadata is ready */
+    }
+  }, []);
+
   /** Private native B2 file URLs may need signing via POST /b2/sign-download. Presigned URLs from the API are returned unchanged. */
-  const resolvePlayableUrl = async (originalUrl: string) => {
+  const resolvePlayableUrl = async (originalUrl: string, options?: { forceSign?: boolean }) => {
     if (!originalUrl.trim() || !isBackblazeUrl(originalUrl)) {
       return originalUrl;
     }
 
-    if (isAlreadyAuthorizedDownloadUrl(originalUrl)) {
+    if (!options?.forceSign && hasValidPresignedQuery(originalUrl)) {
       return originalUrl;
     }
 
@@ -274,7 +270,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       el.addEventListener('error', onError);
     });
 
-  const loadAndPlaySong = async (song: Song, requestId: number) => {
+  const loadAndPlaySongRef = useRef<
+    (
+      song: Song,
+      requestId: number,
+      options?: { forceSign?: boolean; resumeAt?: number },
+    ) => Promise<void>
+  >(async () => {});
+
+  const loadAndPlaySong = async (
+    song: Song,
+    requestId: number,
+    options?: { forceSign?: boolean; resumeAt?: number },
+  ) => {
     if (!audioRef.current) return;
     if (!song.url?.trim()) {
       setIsPlaying(false);
@@ -285,21 +293,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     try {
       setIsLoadingSong(true);
-      const resolvedUrl = await registerDevAudioProxySession(await resolvePlayableUrl(song.url));
+      audioErrorRetriedRef.current = false;
+      let resolvedUrl = await registerAudioProxySession(
+        await resolvePlayableUrl(song.url, { forceSign: options?.forceSign }),
+      );
       if (requestId !== playRequestRef.current || !audioRef.current) return;
       const audio = audioRef.current;
       audio.src = resolvedUrl;
       audio.load();
-      const ready = await waitForMediaCanPlay(audio, requestId);
+      let ready = await waitForMediaCanPlay(audio, requestId);
+      if (!ready && !options?.forceSign) {
+        resolvedUrl = await registerAudioProxySession(
+          await resolvePlayableUrl(song.url, { forceSign: true }),
+        );
+        if (requestId !== playRequestRef.current || !audioRef.current) return;
+        audio.src = resolvedUrl;
+        audio.load();
+        ready = await waitForMediaCanPlay(audio, requestId);
+      }
       if (requestId !== playRequestRef.current || !audioRef.current) return;
       if (!ready) {
         setIsPlaying(false);
         setIsLoadingSong(false);
         return;
       }
+      if (options?.resumeAt != null && options.resumeAt > 0) {
+        audio.currentTime = options.resumeAt;
+      }
       await playAudio();
       if (requestId === playRequestRef.current) {
         setIsLoadingSong(false);
+        syncMediaSession(song, true);
+        updateMediaSessionPosition();
       }
     } catch (error) {
       if (requestId !== playRequestRef.current) return;
@@ -308,6 +333,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.error('Unable to resolve playable URL', error);
     }
   };
+
+  loadAndPlaySongRef.current = loadAndPlaySong;
 
   const play = (song: Song, newQueue?: Song[]) => {
     playRequestRef.current += 1;
@@ -325,29 +352,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       queueMicrotask(start);
     }
 
-    if ('mediaSession' in navigator) {
-      try {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: song.title,
-          artist: song.artist,
-          artwork: song.thumbnail
-            ? [
-                {
-                  src: song.thumbnail,
-                  sizes: '512x512',
-                  type: 'image/jpeg',
-                },
-              ]
-            : [],
-        });
-        navigator.mediaSession.setActionHandler('play', resume);
-        navigator.mediaSession.setActionHandler('pause', pause);
-        navigator.mediaSession.setActionHandler('previoustrack', previous);
-        navigator.mediaSession.setActionHandler('nexttrack', next);
-      } catch (e) {
-        console.warn('Media session metadata failed', e);
-      }
-    }
+    syncMediaSession(song, true);
   };
 
   const pause = () => {
@@ -356,9 +361,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'paused';
-    }
+    if (currentSong) syncMediaSession(currentSong, false);
   };
 
   const resume = () => {
@@ -366,9 +369,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audioRef.current) {
       void playAudio();
     }
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'playing';
-    }
+    if (currentSong) syncMediaSession(currentSong, true);
   };
 
   const next = () => {
@@ -383,6 +384,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       void loadAndPlaySong(nextSong, requestId);
     }
     setCurrentSong(nextSong);
+    syncMediaSession(nextSong, true);
   };
 
   const previous = () => {
@@ -397,7 +399,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       void loadAndPlaySong(prevSong, requestId);
     }
     setCurrentSong(prevSong);
+    syncMediaSession(prevSong, true);
   };
+
+  const syncLibrarySongs = useCallback((librarySongs: Song[]) => {
+    const byId = new Map(librarySongs.map((s) => [s.id, s]));
+    setQueue((prev) =>
+      prev.map((track) => {
+        const fresh = byId.get(track.id);
+        return fresh ? { ...track, url: fresh.url, thumbnail: fresh.thumbnail } : track;
+      }),
+    );
+    setCurrentSong((prev) => {
+      if (!prev) return prev;
+      const fresh = byId.get(prev.id);
+      return fresh ? { ...prev, url: fresh.url, thumbnail: fresh.thumbnail } : prev;
+    });
+
+    const playing = currentSongRef.current;
+    if (!playing || !audioRef.current) return;
+    const fresh = byId.get(playing.id);
+    if (!fresh?.url?.trim() || fresh.url === playing.url) return;
+    if (!isPlayingRef.current && !isLoadingSongRef.current) return;
+
+    const resumeAt = audioRef.current.currentTime;
+    playRequestRef.current += 1;
+    const requestId = playRequestRef.current;
+    void loadAndPlaySongRef.current({ ...playing, url: fresh.url }, requestId, { resumeAt });
+  }, []);
 
   nextRef.current = next;
 
@@ -407,11 +436,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
+      updateMediaSessionPosition();
     };
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
+      updateMediaSessionPosition();
     };
     const handleError = () => {
+      const failedSong = currentSongRef.current;
+      if (
+        !audioErrorRetriedRef.current &&
+        failedSong?.url?.trim() &&
+        isBackblazeUrl(failedSong.url)
+      ) {
+        audioErrorRetriedRef.current = true;
+        const resumeAt = audio.currentTime;
+        playRequestRef.current += 1;
+        const requestId = playRequestRef.current;
+        setIsPlaying(true);
+        void loadAndPlaySongRef.current(failedSong, requestId, { forceSign: true, resumeAt });
+        return;
+      }
       setIsPlaying(false);
       setIsLoadingSong(false);
       if (audio.currentSrc) {
@@ -440,14 +485,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
     };
-  }, []);
+  }, [updateMediaSessionPosition]);
 
   const seek = (time: number) => {
     setCurrentTime(time);
     if (audioRef.current) {
       audioRef.current.currentTime = time;
     }
+    updateMediaSessionPosition();
   };
+
+  controlsRef.current = { pause, resume, next, previous, seek };
+
+  useLayoutEffect(() => {
+    if (!('mediaSession' in navigator)) return undefined;
+    try {
+      navigator.mediaSession.setActionHandler('play', () => controlsRef.current.resume());
+      navigator.mediaSession.setActionHandler('pause', () => controlsRef.current.pause());
+      navigator.mediaSession.setActionHandler('previoustrack', () => controlsRef.current.previous());
+      navigator.mediaSession.setActionHandler('nexttrack', () => controlsRef.current.next());
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime != null) controlsRef.current.seek(details.seekTime);
+      });
+    } catch (e) {
+      console.warn('Media session action handlers failed', e);
+    }
+    return undefined;
+  }, []);
 
   return (
     <PlayerContext.Provider
@@ -469,13 +533,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setLoopMode,
         setCurrentTime,
         setDuration,
+        syncLibrarySongs,
         audioRef,
       }}
     >
       <audio
         ref={audioRef}
         playsInline
-        preload="metadata"
+        preload="auto"
         style={{ display: 'none' }}
         aria-hidden
       />
