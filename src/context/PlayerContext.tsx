@@ -9,6 +9,7 @@ import {
   hasValidPresignedQuery,
   isBackblazeUrl,
 } from '@/lib/mediaUrl';
+import { pickSignedDownloadUrl, readUpstreamJson } from '@/lib/upstreamJson';
 
 type LoopMode = 'none' | '1x' | '2x' | '3x' | '4x' | '5x' | '6x' | 'forever';
 
@@ -87,9 +88,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         console.warn('audio proxy session failed', response.status);
         return httpUrl;
       }
-      const payload = (await response.json()) as { id?: string };
-      if (!payload.id) return httpUrl;
-      return `/api/dev-audio-proxy/s/${payload.id}`;
+      const payload = (await response.json()) as { token?: string; id?: string };
+      const streamKey = payload.token ?? payload.id;
+      if (!streamKey) return httpUrl;
+      return `/api/dev-audio-proxy/s/${encodeURIComponent(streamKey)}`;
     } catch (error) {
       console.warn('audio proxy session error', error);
       return httpUrl;
@@ -149,7 +151,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
 
     const token = getAuthToken();
-    const signEndpoint = '/api/upstream/sign-download';
+    const signEndpoints = ['/api/upstream/b2/sign-download', '/api/upstream/sign-download'];
     const getFileNameFromBackblazeUrl = (urlString: string) => {
       try {
         const u = new URL(urlString);
@@ -197,31 +199,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       : { source_url: originalUrl, sourceUrl: originalUrl };
 
     try {
-      const response = await fetch(signEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(signBody),
-      });
+      for (const signEndpoint of signEndpoints) {
+        const response = await fetch(signEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(signBody),
+        });
 
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        console.warn(
-          'Backblaze signing request failed; playback may fail for private objects',
-          payload?.message ?? response.status,
-        );
-        return originalUrl;
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = await readUpstreamJson(response);
+        const signedUrl = pickSignedDownloadUrl(payload);
+        if (signedUrl) {
+          return signedUrl;
+        }
       }
 
-      const payload = (await response.json()) as { url?: string };
-      if (!payload.url) {
-        return originalUrl;
-      }
-
-      return payload.url;
+      console.warn(
+        'Backblaze signing request failed on all endpoints; playback may fail for private objects',
+      );
+      return originalUrl;
     } catch (error) {
       console.warn('Backblaze signing request error; using original URL', error);
       return originalUrl;
@@ -511,6 +514,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.warn('Media session action handlers failed', e);
     }
     return undefined;
+  }, []);
+
+  useLayoutEffect(() => {
+    const onVisibilityChange = () => {
+      const audio = audioRef.current;
+      if (!audio || document.visibilityState !== 'visible') return;
+      if (isPlayingRef.current && audio.paused && !isLoadingSongRef.current) {
+        void audio.play().catch(() => {
+          setIsPlaying(false);
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, []);
 
   return (

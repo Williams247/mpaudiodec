@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDevAudioSession } from "@/lib/server/devAudioProxyStore";
+import { parseAudioStreamToken } from "@/lib/server/audioStreamToken";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,14 @@ async function streamSession(
   method: "GET" | "HEAD",
 ) {
   const { id } = await context.params;
-  const session = getDevAudioSession(id);
-  if (!session) {
+  const targetUrl =
+    parseAudioStreamToken(id)?.url ?? getDevAudioSession(id)?.url ?? null;
+  if (!targetUrl) {
     return new NextResponse("Unknown or expired session", { status: 404 });
   }
 
   const range = request.headers.get("range") ?? undefined;
-  const upstream = await fetch(session.url, {
+  const upstream = await fetch(targetUrl, {
     method,
     headers: range ? { Range: range } : undefined,
     redirect: "follow",
@@ -59,6 +61,8 @@ async function streamSession(
   if (method === "HEAD" || upstream.status === 204) {
     return new NextResponse(null, { status: upstream.status, headers });
   }
+
+  headers.set("Cache-Control", "no-store, no-cache");
 
   if (!upstream.body) {
     return new NextResponse(null, { status: upstream.status, headers });
