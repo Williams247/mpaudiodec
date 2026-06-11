@@ -8,14 +8,46 @@ export function isCloudinaryUrl(value: string): boolean {
   return value.includes('cloudinary.com');
 }
 
-/** Hosts the server-side audio proxy is allowed to fetch. */
+const DEFAULT_PROXIABLE_HOST_MARKERS = [
+  'backblazeb2.com',
+  'backblaze',
+  'cloudinary.com',
+] as const;
+
+function extraProxiableHosts(): string[] {
+  const raw =
+    typeof process !== 'undefined'
+      ? process.env.MEDIA_PROXY_EXTRA_HOSTS ?? process.env.NEXT_PUBLIC_MEDIA_PROXY_EXTRA_HOSTS
+      : undefined;
+  if (!raw?.trim()) return [];
+  return raw
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Hosts the audio proxy is allowed to fetch (Cloudinary, Backblaze, optional custom CNAMEs). */
 export function isProxiableMediaHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return (
-    host.includes('backblazeb2.com') ||
-    host.includes('backblaze') ||
-    host.includes('cloudinary.com')
+  if (DEFAULT_PROXIABLE_HOST_MARKERS.some((marker) => host.includes(marker))) {
+    return true;
+  }
+  return extraProxiableHosts().some(
+    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
   );
+}
+
+/** True when a remote URL should be streamed through the same-origin audio proxy. */
+export function isProxiableMediaUrl(
+  urlString: string,
+  origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+): boolean {
+  if (!needsSameOriginAudioProxy(urlString, origin)) return false;
+  try {
+    return isProxiableMediaHost(new URL(urlString, origin).hostname);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -113,4 +145,80 @@ export function artworkMimeType(src: string): string {
   if (path.endsWith('.png')) return 'image/png';
   if (path.endsWith('.gif')) return 'image/gif';
   return 'image/jpeg';
+}
+
+const IMAGE_EXTENSIONS = new Set([
+  'webp',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'bmp',
+  'svg',
+  'avif',
+  'heic',
+  'heif',
+]);
+
+const PLAYABLE_FORMAT_SCORE: Record<string, number> = {
+  mp3: 100,
+  wav: 100,
+  m4a: 95,
+  aac: 90,
+  ogg: 80,
+  flac: 75,
+};
+
+export function getMediaExtension(urlString: string): string {
+  const path = urlString.split('?')[0]?.split('#')[0] ?? '';
+  const dot = path.lastIndexOf('.');
+  if (dot === -1) return '';
+  return path.slice(dot + 1).toLowerCase();
+}
+
+/** Higher is better; -1 means not playable (e.g. Cloudinary artwork .webp). */
+export function scorePlayableMediaUrl(urlString: string): number {
+  if (!urlString.trim()) return -1;
+
+  const ext = getMediaExtension(urlString);
+  if (IMAGE_EXTENSIONS.has(ext)) return -1;
+
+  if (ext in PLAYABLE_FORMAT_SCORE) {
+    return PLAYABLE_FORMAT_SCORE[ext];
+  }
+
+  try {
+    const pathname = new URL(urlString).pathname.toLowerCase();
+    if (pathname.includes('/image/upload/')) return -1;
+    // Cloudinary raw uploads are commonly .wav / .mp3 audio files.
+    if (pathname.includes('/raw/upload/')) return 60;
+  } catch {
+    /* ignore */
+  }
+
+  return ext ? 10 : 5;
+}
+
+export function isPlayableMediaUrl(urlString: string): boolean {
+  return scorePlayableMediaUrl(urlString) >= 0;
+}
+
+export function inferMediaContentType(urlString: string): string | undefined {
+  const ext = getMediaExtension(urlString);
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'aac':
+      return 'audio/aac';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'flac':
+      return 'audio/flac';
+    default:
+      return undefined;
+  }
 }

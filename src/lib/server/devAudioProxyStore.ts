@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isProxiableMediaHost } from "@/lib/mediaUrl";
 
 type DevAudioSession = { url: string; exp: number };
 
@@ -22,12 +23,7 @@ export function assertAllowedMediaProxyTarget(targetUrl: string): URL | null {
   if (remote.protocol !== "https:" && remote.protocol !== "http:") {
     return null;
   }
-  const host = remote.hostname.toLowerCase();
-  if (
-    !host.includes("backblazeb2.com") &&
-    !host.includes("backblaze") &&
-    !host.includes("cloudinary.com")
-  ) {
+  if (!isProxiableMediaHost(remote.hostname)) {
     return null;
   }
   return remote;

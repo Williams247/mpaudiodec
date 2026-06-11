@@ -1,6 +1,6 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 import { decryptPayloadAesGcmBase64 } from "@/lib/payloadCrypto";
-import { isExpiredSignedMediaUrl } from "@/lib/mediaUrl";
+import { isExpiredSignedMediaUrl, scorePlayableMediaUrl } from "@/lib/mediaUrl";
 
 const AUTH_TOKEN_KEY = "authToken";
 const UPSTREAM_PREFIX = "/api/upstream";
@@ -127,7 +127,15 @@ function sanitizeDisplayText(raw?: string): string {
 }
 
 function pickAudioFileUrl(music: ApiMusic): string {
-  const candidates: Array<string | undefined> = [
+  const candidates: string[] = [];
+  const pushCandidate = (raw?: string) => {
+    const normalized = normalizeMediaUrl(raw);
+    if (normalized && !isExpiredSignedMediaUrl(normalized)) {
+      candidates.push(normalized);
+    }
+  };
+
+  for (const raw of [
     music.signed_music_url,
     music.signedMusicUrl,
     music.music_url,
@@ -139,28 +147,33 @@ function pickAudioFileUrl(music: ApiMusic): string {
     music.url,
     music.src,
     music.link,
-  ];
-  for (const raw of candidates) {
-    const normalized = normalizeMediaUrl(raw);
-    if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
+  ]) {
+    pushCandidate(raw);
   }
 
   const dynamicEntries = Object.entries(music as unknown as Record<string, unknown>);
   for (const [key, value] of dynamicEntries) {
+    if (/thumbnail|image|cover|poster|artwork|icon/i.test(key)) continue;
     if (!/(url|audio|music|file|src)/i.test(key)) continue;
     if (typeof value === "string") {
-      const normalized = normalizeMediaUrl(value);
-      if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
-    }
-    if (value && typeof value === "object") {
+      pushCandidate(value);
+    } else if (value && typeof value === "object") {
       for (const nestedValue of Object.values(value as Record<string, unknown>)) {
-        if (typeof nestedValue !== "string") continue;
-        const normalized = normalizeMediaUrl(nestedValue);
-        if (normalized && !isExpiredSignedMediaUrl(normalized)) return normalized;
+        if (typeof nestedValue === "string") pushCandidate(nestedValue);
       }
     }
   }
-  return "";
+
+  let bestUrl = "";
+  let bestScore = -1;
+  for (const url of candidates) {
+    const score = scorePlayableMediaUrl(url);
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = url;
+    }
+  }
+  return bestScore >= 0 ? bestUrl : "";
 }
 
 function normalizeMusic(music: ApiMusic): Song {

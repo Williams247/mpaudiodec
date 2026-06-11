@@ -8,7 +8,9 @@ import {
   artworkMimeType,
   hasValidPresignedQuery,
   isBackblazeUrl,
-  needsSameOriginAudioProxy,
+  isCloudinaryUrl,
+  isPlayableMediaUrl,
+  isProxiableMediaUrl,
 } from '@/lib/mediaUrl';
 import { pickSignedDownloadUrl, readUpstreamJson } from '@/lib/upstreamJson';
 
@@ -37,14 +39,14 @@ interface PlayerContextType {
   /** Refresh queue/current track URLs after the library API rotates signed media links. */
   syncLibrarySongs: (librarySongs: Song[]) => void;
 
-  // Audio element reference
-  audioRef: RefObject<HTMLAudioElement | null>;
+  // Hidden audio element (.mp3, .wav, etc.)
+  audioRef: RefObject<HTMLMediaElement | null>;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLMediaElement | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingSong, setIsLoadingSong] = useState(false);
@@ -77,7 +79,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
    * Same-origin stream for remote media (Range-friendly). Required for reliable background playback on iOS/Android.
    */
   const registerAudioProxySession = async (httpUrl: string) => {
-    if (!needsSameOriginAudioProxy(httpUrl)) return httpUrl;
+    if (!isProxiableMediaUrl(httpUrl)) return httpUrl;
 
     try {
       const response = await fetch('/api/dev-audio-proxy/session', {
@@ -288,10 +290,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     options?: { forceSign?: boolean; resumeAt?: number },
   ) => {
     if (!audioRef.current) return;
-    if (!song.url?.trim()) {
+    if (!song.url?.trim() || !isPlayableMediaUrl(song.url)) {
       setIsPlaying(false);
       setIsLoadingSong(false);
-      console.error('Song has no audio URL');
+      console.error('Song has no playable audio URL (check format: use .mp3 or .wav, not .webp artwork)');
       return;
     }
 
@@ -449,18 +451,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     const handleError = () => {
       const failedSong = currentSongRef.current;
-      if (
-        !audioErrorRetriedRef.current &&
-        failedSong?.url?.trim() &&
-        isBackblazeUrl(failedSong.url)
-      ) {
-        audioErrorRetriedRef.current = true;
+      if (!audioErrorRetriedRef.current && failedSong?.url?.trim()) {
         const resumeAt = audio.currentTime;
+        audioErrorRetriedRef.current = true;
         playRequestRef.current += 1;
         const requestId = playRequestRef.current;
         setIsPlaying(true);
-        void loadAndPlaySongRef.current(failedSong, requestId, { forceSign: true, resumeAt });
-        return;
+        if (isBackblazeUrl(failedSong.url)) {
+          void loadAndPlaySongRef.current(failedSong, requestId, { forceSign: true, resumeAt });
+          return;
+        }
+        if (isCloudinaryUrl(failedSong.url)) {
+          void loadAndPlaySongRef.current(failedSong, requestId, { resumeAt });
+          return;
+        }
       }
       setIsPlaying(false);
       setIsLoadingSong(false);
@@ -571,7 +575,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }}
     >
       <audio
-        ref={audioRef}
+        ref={audioRef as RefObject<HTMLAudioElement | null>}
         playsInline
         preload="auto"
         style={{ display: 'none' }}

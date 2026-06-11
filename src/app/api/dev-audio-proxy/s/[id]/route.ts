@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inferMediaContentType } from "@/lib/mediaUrl";
 import { getDevAudioSession } from "@/lib/server/devAudioProxyStore";
 import { parseAudioStreamToken } from "@/lib/server/audioStreamToken";
 
@@ -40,7 +41,7 @@ async function streamSession(
   if (!upstream.ok) {
     const snippet = await upstream.text();
     return new NextResponse(
-      `Backblaze fetch failed (${upstream.status}). ${snippet.slice(0, 500)}${snippet.length > 500 ? "…" : ""}`,
+      `Media fetch failed (${upstream.status}). ${snippet.slice(0, 500)}${snippet.length > 500 ? "…" : ""}`,
       { status: upstream.status, headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );
   }
@@ -60,6 +61,15 @@ async function streamSession(
 
   if (!headers.has("accept-ranges") && upstream.status !== 206) {
     headers.set("accept-ranges", "bytes");
+  }
+
+  const upstreamType = headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  const inferredType = inferMediaContentType(targetUrl);
+  if (
+    inferredType &&
+    (!upstreamType || upstreamType === "application/octet-stream" || upstreamType === "binary/octet-stream")
+  ) {
+    headers.set("content-type", inferredType);
   }
 
   if (method === "HEAD" || upstream.status === 204) {
