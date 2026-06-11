@@ -58,6 +58,10 @@ async function streamSession(
     if (v) headers.set(name, v);
   }
 
+  if (!headers.has("accept-ranges") && upstream.status !== 206) {
+    headers.set("accept-ranges", "bytes");
+  }
+
   if (method === "HEAD" || upstream.status === 204) {
     return new NextResponse(null, { status: upstream.status, headers });
   }

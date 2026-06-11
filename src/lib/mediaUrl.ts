@@ -4,6 +4,39 @@ export function isBackblazeUrl(value: string): boolean {
   return value.includes('backblazeb2.com') || value.includes('backblaze');
 }
 
+export function isCloudinaryUrl(value: string): boolean {
+  return value.includes('cloudinary.com');
+}
+
+/** Hosts the server-side audio proxy is allowed to fetch. */
+export function isProxiableMediaHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host.includes('backblazeb2.com') ||
+    host.includes('backblaze') ||
+    host.includes('cloudinary.com')
+  );
+}
+
+/**
+ * Cross-origin remote audio should be streamed via the same-origin proxy so iOS/Android
+ * keep playing when the screen locks (direct CDN URLs are often paused in background).
+ */
+export function needsSameOriginAudioProxy(
+  urlString: string,
+  origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+): boolean {
+  if (!urlString.trim()) return false;
+  try {
+    const u = new URL(urlString, origin);
+    if (u.pathname.startsWith('/api/dev-audio-proxy/')) return false;
+    if (u.origin === origin) return false;
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function nowEpochSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }

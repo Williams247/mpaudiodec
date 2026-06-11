@@ -12,7 +12,7 @@ function prune() {
   }
 }
 
-export function assertAllowedBackblazeTarget(targetUrl: string): URL | null {
+export function assertAllowedMediaProxyTarget(targetUrl: string): URL | null {
   let remote: URL;
   try {
     remote = new URL(targetUrl);
@@ -23,11 +23,18 @@ export function assertAllowedBackblazeTarget(targetUrl: string): URL | null {
     return null;
   }
   const host = remote.hostname.toLowerCase();
-  if (!host.includes("backblazeb2.com") && !host.includes("backblaze")) {
+  if (
+    !host.includes("backblazeb2.com") &&
+    !host.includes("backblaze") &&
+    !host.includes("cloudinary.com")
+  ) {
     return null;
   }
   return remote;
 }
+
+/** @deprecated Use assertAllowedMediaProxyTarget */
+export const assertAllowedBackblazeTarget = assertAllowedMediaProxyTarget;
 
 export function createDevAudioSession(url: string): string {
   prune();

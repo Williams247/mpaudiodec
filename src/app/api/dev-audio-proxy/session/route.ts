@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAllowedBackblazeTarget } from "@/lib/server/devAudioProxyStore";
+import {
+  assertAllowedMediaProxyTarget,
+  createDevAudioSession,
+} from "@/lib/server/devAudioProxyStore";
 import { createAudioStreamToken } from "@/lib/server/audioStreamToken";
 
 export const dynamic = "force-dynamic";
@@ -11,17 +14,15 @@ export async function POST(request: NextRequest) {
     if (!targetUrl) {
       return NextResponse.json({ message: "Missing url" }, { status: 400 });
     }
-    if (!assertAllowedBackblazeTarget(targetUrl)) {
+    if (!assertAllowedMediaProxyTarget(targetUrl)) {
       return NextResponse.json({ message: "Host not allowed" }, { status: 403 });
     }
     const token = createAudioStreamToken(targetUrl);
-    if (!token) {
-      return NextResponse.json(
-        { message: "Server misconfiguration: API_PAYLOAD_ENCRYPTION_KEY is not set" },
-        { status: 503 },
-      );
+    if (token) {
+      return NextResponse.json({ token });
     }
-    return NextResponse.json({ token });
+    const sessionId = createDevAudioSession(targetUrl);
+    return NextResponse.json({ id: sessionId });
   } catch (e) {
     return NextResponse.json(
       { message: e instanceof Error ? e.message : "Session error" },

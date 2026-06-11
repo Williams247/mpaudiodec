@@ -8,6 +8,7 @@ import {
   artworkMimeType,
   hasValidPresignedQuery,
   isBackblazeUrl,
+  needsSameOriginAudioProxy,
 } from '@/lib/mediaUrl';
 import { pickSignedDownloadUrl, readUpstreamJson } from '@/lib/upstreamJson';
 
@@ -73,10 +74,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   isLoadingSongRef.current = isLoadingSong;
 
   /**
-   * Same-origin stream for Backblaze (Range-friendly). Required for reliable lock-screen controls on iOS/Android.
+   * Same-origin stream for remote media (Range-friendly). Required for reliable background playback on iOS/Android.
    */
   const registerAudioProxySession = async (httpUrl: string) => {
-    if (!isBackblazeUrl(httpUrl)) return httpUrl;
+    if (!needsSameOriginAudioProxy(httpUrl)) return httpUrl;
 
     try {
       const response = await fetch('/api/dev-audio-proxy/session', {
@@ -320,6 +321,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setIsLoadingSong(false);
         return;
       }
+      syncMediaSession(song, true);
       if (options?.resumeAt != null && options.resumeAt > 0) {
         audio.currentTime = options.resumeAt;
       }
@@ -476,19 +478,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         nextRef.current();
       }
     };
+    const handleUnexpectedPause = () => {
+      if (
+        !isPlayingRef.current ||
+        isLoadingSongRef.current ||
+        document.visibilityState === 'visible'
+      ) {
+        return;
+      }
+      void audio.play().catch(() => {
+        setIsPlaying(false);
+      });
+    };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
+    audio.addEventListener('pause', handleUnexpectedPause);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
+      audio.removeEventListener('pause', handleUnexpectedPause);
     };
-  }, [updateMediaSessionPosition]);
+  }, [updateMediaSessionPosition, syncMediaSession]);
 
   const seek = (time: number) => {
     setCurrentTime(time);
