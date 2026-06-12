@@ -5,9 +5,9 @@
   "/api/dev-audio-proxy/session/route": "/api/dev-audio-proxy/session",
   "/api/upstream/[[...path]]/route": "/api/upstream/[[...path]]",
   "/api/dev-audio-proxy/s/[id]/route": "/api/dev-audio-proxy/s/[id]",
+  "/login/page": "/login",
   "/categories/page": "/categories",
   "/forgot-password/page": "/forgot-password",
-  "/login/page": "/login",
-  "/page": "/",
-  "/reset-password/page": "/reset-password"
+  "/reset-password/page": "/reset-password",
+  "/page": "/"
 }
