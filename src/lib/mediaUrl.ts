@@ -203,6 +203,16 @@ export function isPlayableMediaUrl(urlString: string): boolean {
   return scorePlayableMediaUrl(urlString) >= 0;
 }
 
+export function isImageMediaUrl(urlString: string): boolean {
+  if (!urlString.trim()) return false;
+  if (IMAGE_EXTENSIONS.has(getMediaExtension(urlString))) return true;
+  try {
+    return new URL(urlString).pathname.toLowerCase().includes('/image/upload/');
+  } catch {
+    return false;
+  }
+}
+
 export function inferMediaContentType(urlString: string): string | undefined {
   const ext = getMediaExtension(urlString);
   switch (ext) {

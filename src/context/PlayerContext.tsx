@@ -9,7 +9,6 @@ import {
   hasValidPresignedQuery,
   isBackblazeUrl,
   isCloudinaryUrl,
-  isPlayableMediaUrl,
   isProxiableMediaUrl,
 } from '@/lib/mediaUrl';
 import { pickSignedDownloadUrl, readUpstreamJson } from '@/lib/upstreamJson';
@@ -61,6 +60,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const nextRef = useRef<() => void>(() => {});
   const lastPositionStateSyncRef = useRef(0);
   const audioErrorRetriedRef = useRef(false);
+  const playbackSourceRef = useRef<'proxy' | 'direct'>('direct');
   const currentSongRef = useRef<Song | null>(null);
   const isPlayingRef = useRef(false);
   const isLoadingSongRef = useRef(false);
@@ -94,7 +94,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const payload = (await response.json()) as { token?: string; id?: string };
       const streamKey = payload.token ?? payload.id;
       if (!streamKey) return httpUrl;
-      return `/api/dev-audio-proxy/s/${encodeURIComponent(streamKey)}`;
+      return `/api/dev-audio-proxy/s/${streamKey}`;
     } catch (error) {
       console.warn('audio proxy session error', error);
       return httpUrl;
@@ -276,53 +276,93 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       el.addEventListener('error', onError);
     });
 
+  type LoadSongOptions = {
+    forceSign?: boolean;
+    resumeAt?: number;
+    /** Skip proxy and use the signed Cloudinary URL directly (recovery path). */
+    preferDirect?: boolean;
+  };
+
   const loadAndPlaySongRef = useRef<
-    (
-      song: Song,
-      requestId: number,
-      options?: { forceSign?: boolean; resumeAt?: number },
-    ) => Promise<void>
+    (song: Song, requestId: number, options?: LoadSongOptions) => Promise<void>
   >(async () => {});
+
+  const tryLoadMediaUrl = async (
+    audio: HTMLMediaElement,
+    url: string,
+    requestId: number,
+  ): Promise<boolean> => {
+    audio.src = url;
+    audio.load();
+    return waitForMediaCanPlay(audio, requestId);
+  };
+
+  const buildPlaybackUrls = async (
+    songUrl: string,
+    options?: LoadSongOptions,
+  ): Promise<string[]> => {
+    const directUrl = await resolvePlayableUrl(songUrl, { forceSign: options?.forceSign });
+    if (!directUrl.trim()) return [];
+
+    if (options?.preferDirect || !isProxiableMediaUrl(directUrl)) {
+      return [directUrl];
+    }
+
+    const proxiedUrl = await registerAudioProxySession(directUrl);
+    if (proxiedUrl === directUrl) return [directUrl];
+    return [proxiedUrl, directUrl];
+  };
 
   const loadAndPlaySong = async (
     song: Song,
     requestId: number,
-    options?: { forceSign?: boolean; resumeAt?: number },
+    options?: LoadSongOptions,
   ) => {
     if (!audioRef.current) return;
-    if (!song.url?.trim() || !isPlayableMediaUrl(song.url)) {
+    if (!song.url?.trim()) {
       setIsPlaying(false);
       setIsLoadingSong(false);
-      console.error('Song has no playable audio URL (check format: use .mp3 or .wav, not .webp artwork)');
+      console.error('Song has no audio URL');
       return;
     }
 
     try {
       setIsLoadingSong(true);
-      audioErrorRetriedRef.current = false;
-      let resolvedUrl = await registerAudioProxySession(
-        await resolvePlayableUrl(song.url, { forceSign: options?.forceSign }),
-      );
-      if (requestId !== playRequestRef.current || !audioRef.current) return;
-      const audio = audioRef.current;
-      audio.src = resolvedUrl;
-      audio.load();
-      let ready = await waitForMediaCanPlay(audio, requestId);
-      if (!ready && !options?.forceSign) {
-        resolvedUrl = await registerAudioProxySession(
-          await resolvePlayableUrl(song.url, { forceSign: true }),
-        );
-        if (requestId !== playRequestRef.current || !audioRef.current) return;
-        audio.src = resolvedUrl;
-        audio.load();
-        ready = await waitForMediaCanPlay(audio, requestId);
+      if (!options?.resumeAt) {
+        audioErrorRetriedRef.current = false;
       }
-      if (requestId !== playRequestRef.current || !audioRef.current) return;
-      if (!ready) {
+      const audio = audioRef.current;
+
+      const attemptPlayback = async (loadOptions?: LoadSongOptions): Promise<string | null> => {
+        const urls = await buildPlaybackUrls(song.url, loadOptions);
+        for (const url of urls) {
+          if (requestId !== playRequestRef.current) return null;
+          const ok = await tryLoadMediaUrl(audio, url, requestId);
+          if (ok) return url;
+        }
+        return null;
+      };
+
+      let loadedUrl = await attemptPlayback(options);
+      if (
+        !loadedUrl &&
+        !options?.forceSign &&
+        !options?.preferDirect &&
+        isBackblazeUrl(song.url)
+      ) {
+        loadedUrl = await attemptPlayback({ ...options, forceSign: true });
+      }
+
+      if (requestId !== playRequestRef.current) return;
+      if (!loadedUrl) {
         setIsPlaying(false);
         setIsLoadingSong(false);
         return;
       }
+
+      playbackSourceRef.current = loadedUrl.startsWith('/api/dev-audio-proxy/')
+        ? 'proxy'
+        : 'direct';
       syncMediaSession(song, true);
       if (options?.resumeAt != null && options.resumeAt > 0) {
         audio.currentTime = options.resumeAt;
@@ -461,8 +501,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           void loadAndPlaySongRef.current(failedSong, requestId, { forceSign: true, resumeAt });
           return;
         }
-        if (isCloudinaryUrl(failedSong.url)) {
-          void loadAndPlaySongRef.current(failedSong, requestId, { resumeAt });
+        if (playbackSourceRef.current === 'proxy' || isCloudinaryUrl(failedSong.url)) {
+          void loadAndPlaySongRef.current(failedSong, requestId, { resumeAt, preferDirect: true });
           return;
         }
       }
@@ -482,31 +522,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         nextRef.current();
       }
     };
-    const handleUnexpectedPause = () => {
-      if (
-        !isPlayingRef.current ||
-        isLoadingSongRef.current ||
-        document.visibilityState === 'visible'
-      ) {
-        return;
-      }
-      void audio.play().catch(() => {
-        setIsPlaying(false);
-      });
-    };
-
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
-    audio.addEventListener('pause', handleUnexpectedPause);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
-      audio.removeEventListener('pause', handleUnexpectedPause);
     };
   }, [updateMediaSessionPosition, syncMediaSession]);
 
@@ -539,7 +564,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const onVisibilityChange = () => {
       const audio = audioRef.current;
-      if (!audio || document.visibilityState !== 'visible') return;
+      if (!audio) return;
+
+      const song = currentSongRef.current;
+      if (document.visibilityState === 'hidden') {
+        if (isPlayingRef.current && song) {
+          syncMediaSession(song, true);
+          updateMediaSessionPosition();
+        }
+        return;
+      }
+
       if (isPlayingRef.current && audio.paused && !isLoadingSongRef.current) {
         void audio.play().catch(() => {
           setIsPlaying(false);
@@ -548,7 +583,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, []);
+  }, [syncMediaSession, updateMediaSessionPosition]);
 
   return (
     <PlayerContext.Provider

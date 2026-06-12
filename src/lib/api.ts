@@ -1,6 +1,10 @@
 import type { ApiCategory, ApiMusic, Category, Song } from "@/types/music";
 import { decryptPayloadAesGcmBase64 } from "@/lib/payloadCrypto";
-import { isExpiredSignedMediaUrl, scorePlayableMediaUrl } from "@/lib/mediaUrl";
+import {
+  isExpiredSignedMediaUrl,
+  isImageMediaUrl,
+  scorePlayableMediaUrl,
+} from "@/lib/mediaUrl";
 
 const AUTH_TOKEN_KEY = "authToken";
 const UPSTREAM_PREFIX = "/api/upstream";
@@ -173,7 +177,9 @@ function pickAudioFileUrl(music: ApiMusic): string {
       bestUrl = url;
     }
   }
-  return bestScore >= 0 ? bestUrl : "";
+  if (bestScore >= 0) return bestUrl;
+  const fallback = candidates.find((url) => !isImageMediaUrl(url));
+  return fallback ?? "";
 }
 
 function normalizeMusic(music: ApiMusic): Song {

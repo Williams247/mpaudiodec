@@ -5,6 +5,23 @@ import { parseAudioStreamToken } from "@/lib/server/audioStreamToken";
 
 export const dynamic = "force-dynamic";
 
+function resolveStreamTargetUrl(rawId: string): string | null {
+  const tryKeys = [rawId];
+  try {
+    const decoded = decodeURIComponent(rawId);
+    if (decoded !== rawId) tryKeys.push(decoded);
+  } catch {
+    /* ignore */
+  }
+  for (const key of tryKeys) {
+    const fromToken = parseAudioStreamToken(key)?.url;
+    if (fromToken) return fromToken;
+    const fromSession = getDevAudioSession(key)?.url;
+    if (fromSession) return fromSession;
+  }
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -25,8 +42,7 @@ async function streamSession(
   method: "GET" | "HEAD",
 ) {
   const { id } = await context.params;
-  const targetUrl =
-    parseAudioStreamToken(id)?.url ?? getDevAudioSession(id)?.url ?? null;
+  const targetUrl = resolveStreamTargetUrl(id);
   if (!targetUrl) {
     return new NextResponse("Unknown or expired session", { status: 404 });
   }
@@ -34,8 +50,12 @@ async function streamSession(
   const range = request.headers.get("range") ?? undefined;
   const upstream = await fetch(targetUrl, {
     method,
-    headers: range ? { Range: range } : undefined,
+    headers: {
+      Accept: "*/*",
+      ...(range ? { Range: range } : {}),
+    },
     redirect: "follow",
+    cache: "no-store",
   });
 
   if (!upstream.ok) {
