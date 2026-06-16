@@ -1,4 +1,4 @@
-// File: /Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec_web/src/app/api/upstream/[[...path]]/route.ts
+// File: /Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec/src/app/api/upstream/[[...path]]/route.ts
 import * as entry from '../../../../../../src/app/api/upstream/[[...path]]/route.js'
 import type { NextRequest } from 'next/server.js'
 

@@ -96,7 +96,10 @@ async function streamSession(
     return new NextResponse(null, { status: upstream.status, headers });
   }
 
-  headers.set("Cache-Control", "no-store, no-cache");
+  // Audio bytes for a given (signed) URL are immutable, so let the browser cache
+  // chunks. This avoids re-downloading through the proxy when the user seeks back
+  // or the element re-requests a range. `private` keeps it out of shared caches.
+  headers.set("Cache-Control", "private, max-age=600");
 
   if (!upstream.body) {
     return new NextResponse(null, { status: upstream.status, headers });

@@ -291,8 +291,8 @@
       "root": "/Users/williamsalex"
     }
   },
-  "appDir": "/Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec_web",
-  "relativeAppDir": "Desktop/projects/mpaudiodec/mpaudiodec_web",
+  "appDir": "/Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec",
+  "relativeAppDir": "Desktop/projects/mpaudiodec/mpaudiodec",
   "files": [
     ".next/routes-manifest.json",
     ".next/server/pages-manifest.json",

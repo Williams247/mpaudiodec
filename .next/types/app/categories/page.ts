@@ -1,4 +1,4 @@
-// File: /Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec_web/src/app/categories/page.tsx
+// File: /Users/williamsalex/Desktop/projects/mpaudiodec/mpaudiodec/src/app/categories/page.tsx
 import * as entry from '../../../../src/app/categories/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
