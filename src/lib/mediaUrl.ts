@@ -176,6 +176,17 @@ export function getMediaExtension(urlString: string): string {
   return path.slice(dot + 1).toLowerCase();
 }
 
+/** True when a Cloudinary URL likely includes a video track (paused on lock screen). */
+export function isCloudinaryVideoContainerUrl(urlString: string): boolean {
+  try {
+    const pathname = new URL(urlString).pathname.toLowerCase();
+    if (!pathname.includes('/video/authenticated/')) return false;
+    return pathname.includes('/asdstr/');
+  } catch {
+    return false;
+  }
+}
+
 /** Higher is better; -1 means not playable (e.g. Cloudinary artwork .webp). */
 export function scorePlayableMediaUrl(urlString: string): number {
   if (!urlString.trim()) return -1;
@@ -192,6 +203,10 @@ export function scorePlayableMediaUrl(urlString: string): number {
     if (pathname.includes('/image/upload/')) return -1;
     // Cloudinary raw uploads are commonly .wav / .mp3 audio files.
     if (pathname.includes('/raw/upload/')) return 60;
+    // Audio-only Cloudinary uploads (mka/webm) — reliable background playback.
+    if (pathname.includes('/mpawav/')) return 85;
+    // Video-with-video-track uploads — foreground only on mobile lock screen.
+    if (pathname.includes('/asdstr/')) return 15;
   } catch {
     /* ignore */
   }

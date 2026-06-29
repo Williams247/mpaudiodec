@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inferMediaContentType } from "@/lib/mediaUrl";
+import { resolveBackgroundAudioUpstreamUrl } from "@/lib/server/cloudinaryAudioUrl";
 import { getDevAudioSession } from "@/lib/server/devAudioProxyStore";
 import { parseAudioStreamToken } from "@/lib/server/audioStreamToken";
 
@@ -42,10 +43,11 @@ async function streamSession(
   method: "GET" | "HEAD",
 ) {
   const { id } = await context.params;
-  const targetUrl = resolveStreamTargetUrl(id);
-  if (!targetUrl) {
+  const sessionUrl = resolveStreamTargetUrl(id);
+  if (!sessionUrl) {
     return new NextResponse("Unknown or expired session", { status: 404 });
   }
+  const targetUrl = resolveBackgroundAudioUpstreamUrl(sessionUrl);
 
   const range = request.headers.get("range") ?? undefined;
   const upstream = await fetch(targetUrl, {
@@ -90,6 +92,10 @@ async function streamSession(
     (!upstreamType || upstreamType === "application/octet-stream" || upstreamType === "binary/octet-stream")
   ) {
     headers.set("content-type", inferredType);
+  } else if (upstreamType?.startsWith("video/") && inferredType?.startsWith("audio/")) {
+    headers.set("content-type", inferredType);
+  } else if (upstreamType === "video/mp4" && targetUrl.includes("f_m4a,vc_none")) {
+    headers.set("content-type", "audio/mp4");
   }
 
   if (method === "HEAD" || upstream.status === 204) {

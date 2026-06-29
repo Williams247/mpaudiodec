@@ -285,12 +285,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Default: stream straight from the CDN. No proxy double-hop means a far faster
-      // start and much less buffering, and Android keeps background/lock-screen
-      // playback alive for cross-origin sources via the Media Session API. The
-      // same-origin proxy is used only as an automatic fallback (see handleError).
+      // Stream remote media through the same-origin proxy so iOS/Android keep playing
+      // when the screen locks. Video-with-track assets (asdstr) are converted to
+      // audio-only m4a server-side when CLOUDINARY_API_SECRET is configured.
       let sourceUrl = directUrl;
-      if (options?.preferProxy && isProxiableMediaUrl(directUrl)) {
+      if (isProxiableMediaUrl(directUrl)) {
         sourceUrl = await registerAudioProxySession(directUrl);
         if (requestId !== playRequestRef.current) return;
       }

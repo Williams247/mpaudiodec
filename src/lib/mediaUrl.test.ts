@@ -12,6 +12,15 @@ describe("scorePlayableMediaUrl", () => {
     expect(scorePlayableMediaUrl(webp)).toBe(-1);
   });
 
+  it("prefers mpawav over asdstr Cloudinary folders", () => {
+    const mpawav =
+      "https://res.cloudinary.com/samdc/video/authenticated/s--x--/v1/mpawav/song";
+    const asdstr =
+      "https://res.cloudinary.com/samdc/video/authenticated/s--x--/v1/asdstr/song";
+
+    expect(scorePlayableMediaUrl(mpawav)).toBeGreaterThan(scorePlayableMediaUrl(asdstr));
+  });
+
   it("reads extension before query string", () => {
     expect(getMediaExtension("https://cdn.example.com/song.mp3?token=abc")).toBe("mp3");
   });

@@ -139,13 +139,16 @@ function pickAudioFileUrl(music: ApiMusic): string {
     }
   };
 
+  // Prefer explicit audio URLs first — they are usually audio-only and background-safe.
+  for (const raw of [music.audio_url, music.audioUrl]) {
+    pushCandidate(raw);
+  }
+
   for (const raw of [
     music.signed_music_url,
     music.signedMusicUrl,
     music.music_url,
     music.musicUrl,
-    music.audio_url,
-    music.audioUrl,
     music.file_url,
     music.fileUrl,
     music.url,
